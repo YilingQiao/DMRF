@@ -16,7 +16,11 @@ The NeRF volume rendering is largely based on NVIDA's great work [InstantNGP](ht
 ## Structure
 We have now uploaded all core C++/CUDA files but are still cleaning the python scripts, config files, and datasets for running each experiment.
 
-The main loop for raytracing-NeRF coupling is the `render_nerf_rt` function at `./src/testbed_nerf.cu`. The folder `./simpleRt/` also has CUDA-based raytracing-related functions. 
+The entry to the main rendering loop for raytracing-NeRF coupling is the `render_nerf_rt` function at `./src/testbed_nerf.cu`. 
+
+The folder `./simpleRt/` also has CUDA-based raytracing-related functions. 
+
+Physics simulation module will be called in python scripts.
 
 
 ## Setup
