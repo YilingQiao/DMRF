@@ -184,6 +184,68 @@ py::array_t<float> Testbed::render_to_cpu(int width, int height, int spp, bool l
 	return result;
 }
 
+py::array_t<float> Testbed::render_to_cpu_withspp(int width, int height, int special_spp, bool linear, float start_time, float end_time, float fps, float shutter_fraction) {
+	m_windowless_render_surface.resize({width, height});
+	m_windowless_render_surface.reset_accumulation();
+	
+	int spp = 1;
+	m_windowless_render_surface.set_spp(special_spp);
+
+	if (end_time < 0.f) {
+		end_time = start_time;
+	}
+	bool path_animation_enabled = start_time >= 0.f;
+	if (!path_animation_enabled) { // the old code disabled camera smoothing for non-path renders; so we preserve that behaviour
+		m_smoothed_camera = m_camera;
+	}
+
+	// this rendering code assumes that the intra-frame camera motion starts from m_smoothed_camera (ie where we left off) to allow for EMA camera smoothing.
+	// in the case of a camera path animation, at the very start of the animation, we have yet to initialize smoothed_camera to something sensible
+	// - it will just be the default boot position. oops!
+	// that led to the first frame having a crazy streak from the default camera position to the start of the path.
+	// so we detect that case and explicitly force the current matrix to the start of the path
+	if (start_time == 0.f) {
+		set_camera_from_time(start_time);
+		m_smoothed_camera = m_camera;
+	}
+	auto start_cam_matrix = m_smoothed_camera;
+
+	// now set up the end-of-frame camera matrix if we are moving along a path
+	if (path_animation_enabled) {
+		set_camera_from_time(end_time);
+		apply_camera_smoothing(1000.f / fps);
+	}
+	auto end_cam_matrix = m_smoothed_camera;
+
+	for (int i = 0; i < spp; ++i) {
+		float start_alpha = ((float)i)/(float)spp * shutter_fraction;
+		float end_alpha = ((float)i + 1.0f)/(float)spp * shutter_fraction;
+
+		auto sample_start_cam_matrix = log_space_lerp(start_cam_matrix, end_cam_matrix, start_alpha);
+		auto sample_end_cam_matrix = log_space_lerp(start_cam_matrix, end_cam_matrix, end_alpha);
+
+		if (path_animation_enabled) {
+			set_camera_from_time(start_time + (end_time-start_time) * (start_alpha + end_alpha) / 2.0f);
+			m_smoothed_camera = m_camera;
+		}
+
+		if (m_autofocus) {
+			autofocus();
+		}
+
+		render_frame(sample_start_cam_matrix, sample_end_cam_matrix, Eigen::Vector4f::Zero(), m_windowless_render_surface, !linear);
+	}
+
+	// For cam smoothing when rendering the next frame.
+	m_smoothed_camera = end_cam_matrix;
+
+	py::array_t<float> result({height, width, 4});
+	py::buffer_info buf = result.request();
+
+	CUDA_CHECK_THROW(cudaMemcpy2DFromArray(buf.ptr, width * sizeof(float) * 4, m_windowless_render_surface.surface_provider().array(), 0, 0, width * sizeof(float) * 4, height, cudaMemcpyDeviceToHost));
+	return result;
+}
+
 py::array_t<float> Testbed::render_with_rolling_shutter_to_cpu(const Eigen::Matrix<float, 3, 4>& camera_transform_start, const Eigen::Matrix<float, 3, 4>& camera_transform_end, const Eigen::Vector4f& rolling_shutter, int width, int height, int spp, bool linear) {
 	m_windowless_render_surface.resize({width, height});
 	m_windowless_render_surface.reset_accumulation();
@@ -359,12 +421,54 @@ PYBIND11_MODULE(pyngp, m) {
 		.def("is_super_down", [](py::object& obj) { return ImGui::GetIO().KeyMods & ImGuiKeyModFlags_Super; })
 		.def("screenshot", &Testbed::screenshot, "Takes a screenshot of the current window contents.", py::arg("linear")=true)
 #endif
+		// ra tracing functinos
+		.def("rt_world_size", &Testbed::rt_world_size, "returns number of the surface objects")
+		.def("rt_hittable_center", &Testbed::rt_hittable_center, "returns center of an objects",
+			py::arg("idx")
+		)
+		.def("rt_set_hittable_center", &Testbed::rt_set_hittable_center, "set center of an objects",
+			py::arg("idx"),
+			py::arg("c")
+		)
+		.def("rt_set_lightsrc_center", &Testbed::rt_set_lightsrc_center, "set center of an lightsrc",
+			py::arg("idx"),
+			py::arg("c")
+		)
+		.def("rt_set_lightsrc_radius", &Testbed::rt_set_lightsrc_radius, "set radius of an lightsrc",
+			py::arg("idx"),
+			py::arg("c")
+		)
+		.def("rt_set_shadow_decay", &Testbed::rt_set_shadow_decay, "set shadow_decay",
+			py::arg("c")
+		)
+		.def("set_nerf_rot_trans", &Testbed::set_nerf_rot_trans, "set rot and trans of nerf",
+			py::arg("rot"),
+			py::arg("trans")
+		)
+		.def("rt_set_triangle_verts", &Testbed::rt_set_triangle_verts, "set center of a triangle",
+			py::arg("idx"),
+			py::arg("v1"),
+			py::arg("v2"),
+			py::arg("v3")
+		)
+		.def("rt_update_bvh", &Testbed::rt_update_bvh, "refit bvh")
+		// end ray tracing
 		.def("want_repl", &Testbed::want_repl, "returns true if the user clicked the 'I want a repl' button")
 		.def("frame", &Testbed::frame, py::call_guard<py::gil_scoped_release>(), "Process a single frame. Renders if a window was previously created.")
 		.def("render", &Testbed::render_to_cpu, "Renders an image at the requested resolution. Does not require a window.",
 			py::arg("width") = 1920,
 			py::arg("height") = 1080,
 			py::arg("spp") = 1,
+			py::arg("linear") = true,
+			py::arg("start_t") = -1.f,
+			py::arg("end_t") = -1.f,
+			py::arg("fps") = 30.f,
+			py::arg("shutter_fraction") = 1.0f
+		)
+		.def("render_spp", &Testbed::render_to_cpu_withspp, "Renders an image at the requested resolution. Does not require a window.",
+			py::arg("width") = 1920,
+			py::arg("height") = 1080,
+			py::arg("special_spp") = 1,
 			py::arg("linear") = true,
 			py::arg("start_t") = -1.f,
 			py::arg("end_t") = -1.f,
@@ -438,6 +542,10 @@ PYBIND11_MODULE(pyngp, m) {
 
 	// Interesting members.
 	testbed
+	// Add for hybrid
+		.def_readwrite("hybrid_render", &Testbed::m_hybrid_render)
+		.def_readwrite("keyboard_rt", &Testbed::keyboard_rt)
+	// add for hybrid end
 		.def_readwrite("dynamic_res", &Testbed::m_dynamic_res)
 		.def_readwrite("dynamic_res_target_fps", &Testbed::m_dynamic_res_target_fps)
 		.def_readwrite("fixed_res_factor", &Testbed::m_fixed_res_factor)

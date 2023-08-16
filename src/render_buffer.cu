@@ -607,6 +607,7 @@ void CudaRenderBuffer::accumulate(float exposure, cudaStream_t stream) {
 	Vector2i res = in_resolution();
 
 	uint32_t accum_spp = m_dlss ? 0 : m_spp;
+	// uint32_t accum_spp = 0;
 
 	if (accum_spp == 0) {
 		CUDA_CHECK_THROW(cudaMemsetAsync(m_accumulate_buffer.data(), 0, m_accumulate_buffer.bytes(), stream));

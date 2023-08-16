@@ -603,6 +603,69 @@ __global__ void bitfield_max_pool(const uint32_t n_elements,
 	next_level[tcnn::morton3D(x, y, z)] |= bits;
 }
 
+__global__ void advance_pos_nerf_rt(
+	const uint32_t n_elements,
+	BoundingBox render_aabb,
+	Matrix3f render_aabb_to_local,
+	Vector3f camera_fwd,
+	Vector2f focal_length,
+	uint32_t sample_index,
+	const ray* rt_rays,
+	Matrix3f rt_nerf_rot,
+	Vector3f rt_nerf_trans,
+	NerfPayload* __restrict__ payloads,
+	const uint8_t* __restrict__ density_grid,
+	uint32_t min_mip,
+	float cone_angle_constant
+) {
+	const uint32_t i = threadIdx.x + blockIdx.x * blockDim.x;
+	if (i >= n_elements) return;
+
+	NerfPayload& payload = payloads[i];
+	float ray_t = rt_rays[i]._time;
+
+	if (!payload.alive) {
+		return;
+	}
+
+	Vector3f origin = payload.origin;
+	Vector3f dir = payload.dir;
+	Vector3f idir = dir.cwiseInverse();
+
+	float cone_angle = calc_cone_angle(dir.dot(camera_fwd), focal_length, cone_angle_constant);
+
+	float t = payload.t;
+	float dt = calc_dt(t, cone_angle);
+	t += ld_random_val(sample_index, i * 786433) * dt;
+	Vector3f pos;
+
+	while (1) {
+		pos = origin + dir * t;
+		pos = rt_nerf_rot.inverse() * (pos - rt_nerf_trans);
+		if (!render_aabb.contains(render_aabb_to_local * pos)) {
+		// if (!render_aabb.contains(render_aabb_to_local * pos) || t > ray_t) {
+			payload.alive = false;
+			break;
+		}
+
+		if (t > ray_t)
+			break;
+
+		dt = calc_dt(t, cone_angle);
+		uint32_t mip = max(min_mip, mip_from_dt(dt, pos));
+
+		if (!density_grid || density_grid_occupied_at(pos, density_grid, mip)) {
+			break;
+		}
+
+		uint32_t res = NERF_GRIDSIZE()>>mip;
+		t = advance_to_next_voxel(t, cone_angle, pos, dir, idir, res);
+	}
+
+	payload.t = t;
+}
+
+
 __global__ void advance_pos_nerf(
 	const uint32_t n_elements,
 	BoundingBox render_aabb,
@@ -693,6 +756,75 @@ __global__ void compute_nerf_rgba(const uint32_t n_elements, Array4f* network_ou
 	network_output[i] = rgba;
 }
 
+
+__global__ void generate_next_nerf_network_inputs_rt(
+	const uint32_t n_elements,
+	BoundingBox render_aabb,
+	Matrix3f render_aabb_to_local,
+	BoundingBox train_aabb,
+	Vector2f focal_length,
+	Vector3f camera_fwd,
+	const ray* rt_rays,
+	Matrix3f rt_nerf_rot,
+	Vector3f rt_nerf_trans,
+	NerfPayload* __restrict__ payloads,
+	PitchedPtr<NerfCoordinate> network_input,
+	uint32_t n_steps,
+	const uint8_t* __restrict__ density_grid,
+	uint32_t min_mip,
+	float cone_angle_constant,
+	const float* extra_dims
+) {
+	const uint32_t i = threadIdx.x + blockIdx.x * blockDim.x;
+	if (i >= n_elements) return;
+
+	NerfPayload& payload = payloads[i];
+
+	if (!payload.alive) {
+		return;
+	}
+
+	float ray_t = rt_rays[payload.idx]._time;
+
+	Vector3f origin = payload.origin;
+	Vector3f dir = payload.dir;
+	Vector3f idir = dir.cwiseInverse();
+
+	float cone_angle = calc_cone_angle(dir.dot(camera_fwd), focal_length, cone_angle_constant);
+
+	float t = payload.t;
+	// n_steps == 1
+	for (uint32_t j = 0; j < n_steps; ++j) {
+		Vector3f pos;
+		float dt = 0.0f;
+		while (1) {
+			pos = origin + dir * t;
+			pos = rt_nerf_rot.inverse() * (pos - rt_nerf_trans);
+			// if (!render_aabb.contains(render_aabb_to_local * pos)) {
+			if (!render_aabb.contains(render_aabb_to_local * pos) || t > ray_t) {
+				payload.n_steps = j;
+				return;
+			}
+
+			dt = calc_dt(t, cone_angle);
+			uint32_t mip = max(min_mip, mip_from_dt(dt, pos));
+
+			if (!density_grid || density_grid_occupied_at(pos, density_grid, mip)) {
+				break;
+			}
+
+			uint32_t res = NERF_GRIDSIZE()>>mip;
+			t = advance_to_next_voxel(t, cone_angle, pos, dir, idir, res);
+		}
+
+		network_input(i + j * n_elements)->set_with_optional_extra_dims(warp_position(pos, train_aabb), warp_direction(dir), warp_dt(dt), extra_dims, network_input.stride_in_bytes); // XXXCONE
+		t += dt;
+	}
+
+	payload.t = t;
+	payload.n_steps = n_steps;
+}
+
 __global__ void generate_next_nerf_network_inputs(
 	const uint32_t n_elements,
 	BoundingBox render_aabb,
@@ -724,7 +856,7 @@ __global__ void generate_next_nerf_network_inputs(
 	float cone_angle = calc_cone_angle(dir.dot(camera_fwd), focal_length, cone_angle_constant);
 
 	float t = payload.t;
-
+	// n_steps == 1
 	for (uint32_t j = 0; j < n_steps; ++j) {
 		Vector3f pos;
 		float dt = 0.0f;
@@ -753,6 +885,126 @@ __global__ void generate_next_nerf_network_inputs(
 	payload.t = t;
 	payload.n_steps = n_steps;
 }
+
+
+__global__ void composite_kernel_nerf_rt(
+	const uint32_t n_elements,
+	const uint32_t stride,
+	const uint32_t current_step,
+	BoundingBox aabb,
+	float glow_y_cutoff,
+	int glow_mode,
+	const uint32_t n_training_images,
+	const TrainingXForm* __restrict__ training_xforms,
+	Matrix<float, 3, 4> camera_matrix,
+	Vector2f focal_length,
+	float depth_scale,
+	vec3 *array_pos,
+	Array4f* __restrict__ rgba,
+	float* __restrict__ depth,
+	NerfPayload* payloads,
+	PitchedPtr<NerfCoordinate> network_input,
+	const tcnn::network_precision_t* __restrict__ network_output,
+	uint32_t padded_output_width,
+	uint32_t n_steps,
+	ERenderMode render_mode,
+	const uint8_t* __restrict__ density_grid,
+	ENerfActivation rgb_activation,
+	ENerfActivation density_activation,
+	int show_accel,
+	float min_transmittance
+) {
+	const uint32_t i = threadIdx.x + blockIdx.x * blockDim.x;
+	if (i >= n_elements) return;
+
+	NerfPayload& payload = payloads[i];
+
+	if (!payload.alive) {
+		return;
+	}
+
+	Array4f local_rgba = rgba[i];
+	float local_depth = depth[i];
+	Vector3f origin = payload.origin;
+	Vector3f cam_fwd = camera_matrix.col(2);
+	// Composite in the last n steps
+	uint32_t actual_n_steps = payload.n_steps;
+	uint32_t j = 0;
+
+	for (; j < actual_n_steps; ++j) {
+		tcnn::vector_t<tcnn::network_precision_t, 4> local_network_output;
+		local_network_output[0] = network_output[i + j * n_elements + 0 * stride];
+		local_network_output[1] = network_output[i + j * n_elements + 1 * stride];
+		local_network_output[2] = network_output[i + j * n_elements + 2 * stride];
+		local_network_output[3] = network_output[i + j * n_elements + 3 * stride];
+		const NerfCoordinate* input = network_input(i + j * n_elements);
+		Vector3f warped_pos = input->pos.p;
+		Vector3f pos = unwarp_position(warped_pos, aabb);
+
+		float T = 1.f - local_rgba.w();
+		float dt = unwarp_dt(input->dt);
+		float alpha = 1.f - __expf(-network_to_density(float(local_network_output[3]), density_activation) * dt);
+		if (show_accel >= 0) {
+			alpha = 1.f;
+		}
+		float weight = alpha * T;
+
+		Array3f rgb = network_to_rgb(local_network_output, rgb_activation);
+
+		if (render_mode == ERenderMode::Normals) {
+			// Network input contains the gradient of the network output w.r.t. input.
+			// So to compute density gradients, we need to apply the chain rule.
+			// The normal is then in the opposite direction of the density gradient (i.e. the direction of decreasing density)
+			Vector3f normal = -network_to_density_derivative(float(local_network_output[3]), density_activation) * warped_pos;
+			rgb = normal.normalized().array();
+		} else if (render_mode == ERenderMode::Positions) {
+			if (show_accel >= 0) {
+				uint32_t mip = max(show_accel, mip_from_pos(pos));
+				uint32_t res = NERF_GRIDSIZE() >> mip;
+				int ix = pos.x()*(res);
+				int iy = pos.y()*(res);
+				int iz = pos.z()*(res);
+				default_rng_t rng(ix+iy*232323+iz*727272);
+				rgb.x() = 1.f-mip*(1.f/(NERF_CASCADES()-1));
+				rgb.y() = rng.next_float();
+				rgb.z() = rng.next_float();
+			} else {
+				rgb = (pos.array() - Array3f::Constant(0.5f)) / 2.0f + Array3f::Constant(0.5f);
+			}
+		} else if (render_mode == ERenderMode::EncodingVis) {
+			rgb = warped_pos.array();
+		} else if (render_mode == ERenderMode::Depth) {
+			rgb = Array3f::Constant(cam_fwd.dot(pos - origin) * depth_scale);
+		} else if (render_mode == ERenderMode::AO) {
+			rgb = Array3f::Constant(alpha);
+		}
+
+
+		// array_pos[payload.idx] += weight * vec3(pos.x(), pos.y(), pos.z());
+		local_rgba.head<3>() += rgb * weight;
+		local_rgba.w() += weight;
+		if (weight > payload.max_weight) {
+			payload.max_weight = weight;
+			local_depth = cam_fwd.dot(pos - camera_matrix.col(3));
+		}
+
+		if (local_rgba.w() > (1.0f - min_transmittance)) {
+			local_rgba /= local_rgba.w();
+			// array_pos[payload.idx] /= local_rgba.w();
+
+			break;
+		}
+	}
+
+	if (j < n_steps) {
+		payload.alive = false;
+		payload.n_steps = j + current_step;
+	}
+
+	rgba[i] = local_rgba;
+	depth[i] = local_depth;
+}
+
 
 __global__ void composite_kernel_nerf(
 	const uint32_t n_elements,
@@ -817,103 +1069,103 @@ __global__ void composite_kernel_nerf(
 
 		Array3f rgb = network_to_rgb(local_network_output, rgb_activation);
 
-		if (glow_mode) { // random grid visualizations ftw!
-#if 0
-			if (0) {  // extremely startrek edition
-				float glow_y = (pos.y() - (glow_y_cutoff - 0.5f)) * 2.f;
-				if (glow_y>1.f) glow_y=max(0.f,21.f-glow_y*20.f);
-				if (glow_y>0.f) {
-					float line;
-					line =max(0.f,cosf(pos.y()*2.f*3.141592653589793f * 16.f)-0.95f);
-					line+=max(0.f,cosf(pos.x()*2.f*3.141592653589793f * 16.f)-0.95f);
-					line+=max(0.f,cosf(pos.z()*2.f*3.141592653589793f * 16.f)-0.95f);
-					line+=max(0.f,cosf(pos.y()*4.f*3.141592653589793f * 16.f)-0.975f);
-					line+=max(0.f,cosf(pos.x()*4.f*3.141592653589793f * 16.f)-0.975f);
-					line+=max(0.f,cosf(pos.z()*4.f*3.141592653589793f * 16.f)-0.975f);
-					glow_y=glow_y*glow_y*0.5f + glow_y*line*25.f;
-					rgb.y()+=glow_y;
-					rgb.z()+=glow_y*0.5f;
-					rgb.x()+=glow_y*0.25f;
-				}
-			}
-#endif
-			float glow = 0.f;
+// 		if (glow_mode) { // random grid visualizations ftw!
+// #if 0
+// 			if (0) {  // extremely startrek edition
+// 				float glow_y = (pos.y() - (glow_y_cutoff - 0.5f)) * 2.f;
+// 				if (glow_y>1.f) glow_y=max(0.f,21.f-glow_y*20.f);
+// 				if (glow_y>0.f) {
+// 					float line;
+// 					line =max(0.f,cosf(pos.y()*2.f*3.141592653589793f * 16.f)-0.95f);
+// 					line+=max(0.f,cosf(pos.x()*2.f*3.141592653589793f * 16.f)-0.95f);
+// 					line+=max(0.f,cosf(pos.z()*2.f*3.141592653589793f * 16.f)-0.95f);
+// 					line+=max(0.f,cosf(pos.y()*4.f*3.141592653589793f * 16.f)-0.975f);
+// 					line+=max(0.f,cosf(pos.x()*4.f*3.141592653589793f * 16.f)-0.975f);
+// 					line+=max(0.f,cosf(pos.z()*4.f*3.141592653589793f * 16.f)-0.975f);
+// 					glow_y=glow_y*glow_y*0.5f + glow_y*line*25.f;
+// 					rgb.y()+=glow_y;
+// 					rgb.z()+=glow_y*0.5f;
+// 					rgb.x()+=glow_y*0.25f;
+// 				}
+// 			}
+// #endif
+// 			float glow = 0.f;
 
-			bool green_grid = glow_mode & 1;
-			bool green_cutline = glow_mode & 2;
-			bool mask_to_alpha = glow_mode & 4;
+// 			bool green_grid = glow_mode & 1;
+// 			bool green_cutline = glow_mode & 2;
+// 			bool mask_to_alpha = glow_mode & 4;
 
-			// less used?
-			bool radial_mode = glow_mode & 8;
-			bool grid_mode = glow_mode & 16; // makes object rgb go black!
+// 			// less used?
+// 			bool radial_mode = glow_mode & 8;
+// 			bool grid_mode = glow_mode & 16; // makes object rgb go black!
 
-			{
-				float dist;
-				if (radial_mode) {
-					dist = (pos - camera_matrix.col(3)).norm();
-					dist = min(dist, (4.5f - pos.y()) * 0.333f);
-				} else {
-					dist = pos.y();
-				}
+// 			{
+// 				float dist;
+// 				if (radial_mode) {
+// 					dist = (pos - camera_matrix.col(3)).norm();
+// 					dist = min(dist, (4.5f - pos.y()) * 0.333f);
+// 				} else {
+// 					dist = pos.y();
+// 				}
 
-				if (grid_mode) {
-					glow = 1.f / max(1.f, dist);
-				} else {
-					float y = glow_y_cutoff - dist; // - (ii*0.005f);
-					float mask = 0.f;
-					if (y > 0.f) {
-						y *= 80.f;
-						mask = min(1.f, y);
-						//if (mask_mode) {
-						//	rgb.x()=rgb.y()=rgb.z()=mask; // mask mode
-						//} else
-						{
-							if (green_cutline) {
-								glow += max(0.f, 1.f - abs(1.f -y)) * 4.f;
-							}
+// 				if (grid_mode) {
+// 					glow = 1.f / max(1.f, dist);
+// 				} else {
+// 					float y = glow_y_cutoff - dist; // - (ii*0.005f);
+// 					float mask = 0.f;
+// 					if (y > 0.f) {
+// 						y *= 80.f;
+// 						mask = min(1.f, y);
+// 						//if (mask_mode) {
+// 						//	rgb.x()=rgb.y()=rgb.z()=mask; // mask mode
+// 						//} else
+// 						{
+// 							if (green_cutline) {
+// 								glow += max(0.f, 1.f - abs(1.f -y)) * 4.f;
+// 							}
 
-							if (y>1.f) {
-								y = 1.f - (y - 1.f) * 0.05f;
-							}
+// 							if (y>1.f) {
+// 								y = 1.f - (y - 1.f) * 0.05f;
+// 							}
 
-							if (green_grid) {
-								glow += max(0.f, y / max(1.f, dist));
-							}
-						}
-					}
-					if (mask_to_alpha) {
-						weight *= mask;
-					}
-				}
-			}
+// 							if (green_grid) {
+// 								glow += max(0.f, y / max(1.f, dist));
+// 							}
+// 						}
+// 					}
+// 					if (mask_to_alpha) {
+// 						weight *= mask;
+// 					}
+// 				}
+// 			}
 
-			if (glow > 0.f) {
-				float line;
-				line  = max(0.f, cosf(pos.y() * 2.f * 3.141592653589793f * 16.f) - 0.975f);
-				line += max(0.f, cosf(pos.x() * 2.f * 3.141592653589793f * 16.f) - 0.975f);
-				line += max(0.f, cosf(pos.z() * 2.f * 3.141592653589793f * 16.f) - 0.975f);
-				line += max(0.f, cosf(pos.y() * 4.f * 3.141592653589793f * 16.f) - 0.975f);
-				line += max(0.f, cosf(pos.x() * 4.f * 3.141592653589793f * 16.f) - 0.975f);
-				line += max(0.f, cosf(pos.z() * 4.f * 3.141592653589793f * 16.f) - 0.975f);
-				line += max(0.f, cosf(pos.y() * 8.f * 3.141592653589793f * 16.f) - 0.975f);
-				line += max(0.f, cosf(pos.x() * 8.f * 3.141592653589793f * 16.f) - 0.975f);
-				line += max(0.f, cosf(pos.z() * 8.f * 3.141592653589793f * 16.f) - 0.975f);
-				line += max(0.f, cosf(pos.y() * 16.f * 3.141592653589793f * 16.f) - 0.975f);
-				line += max(0.f, cosf(pos.x() * 16.f * 3.141592653589793f * 16.f) - 0.975f);
-				line += max(0.f, cosf(pos.z() * 16.f * 3.141592653589793f * 16.f) - 0.975f);
-				if (grid_mode) {
-					glow = /*glow*glow*0.75f + */ glow * line * 15.f;
-					rgb.y() = glow;
-					rgb.z() = glow * 0.5f;
-					rgb.x() = glow * 0.25f;
-				} else {
-					glow = glow * glow * 0.25f + glow * line * 15.f;
-					rgb.y() += glow;
-					rgb.z() += glow * 0.5f;
-					rgb.x() += glow * 0.25f;
-				}
-			}
-		} // glow
+// 			if (glow > 0.f) {
+// 				float line;
+// 				line  = max(0.f, cosf(pos.y() * 2.f * 3.141592653589793f * 16.f) - 0.975f);
+// 				line += max(0.f, cosf(pos.x() * 2.f * 3.141592653589793f * 16.f) - 0.975f);
+// 				line += max(0.f, cosf(pos.z() * 2.f * 3.141592653589793f * 16.f) - 0.975f);
+// 				line += max(0.f, cosf(pos.y() * 4.f * 3.141592653589793f * 16.f) - 0.975f);
+// 				line += max(0.f, cosf(pos.x() * 4.f * 3.141592653589793f * 16.f) - 0.975f);
+// 				line += max(0.f, cosf(pos.z() * 4.f * 3.141592653589793f * 16.f) - 0.975f);
+// 				line += max(0.f, cosf(pos.y() * 8.f * 3.141592653589793f * 16.f) - 0.975f);
+// 				line += max(0.f, cosf(pos.x() * 8.f * 3.141592653589793f * 16.f) - 0.975f);
+// 				line += max(0.f, cosf(pos.z() * 8.f * 3.141592653589793f * 16.f) - 0.975f);
+// 				line += max(0.f, cosf(pos.y() * 16.f * 3.141592653589793f * 16.f) - 0.975f);
+// 				line += max(0.f, cosf(pos.x() * 16.f * 3.141592653589793f * 16.f) - 0.975f);
+// 				line += max(0.f, cosf(pos.z() * 16.f * 3.141592653589793f * 16.f) - 0.975f);
+// 				if (grid_mode) {
+// 					glow = /*glow*glow*0.75f + */ glow * line * 15.f;
+// 					rgb.y() = glow;
+// 					rgb.z() = glow * 0.5f;
+// 					rgb.x() = glow * 0.25f;
+// 				} else {
+// 					glow = glow * glow * 0.25f + glow * line * 15.f;
+// 					rgb.y() += glow;
+// 					rgb.z() += glow * 0.5f;
+// 					rgb.x() += glow * 0.25f;
+// 				}
+// 			}
+// 		} // glow
 
 		if (render_mode == ERenderMode::Normals) {
 			// Network input contains the gradient of the network output w.r.t. input.
@@ -1721,6 +1973,176 @@ __global__ void compute_extra_dims_gradient_train_nerf(
 	}
 }
 
+
+__global__ void shade_kernel_nerf_rt(
+	const uint32_t n_elements,
+	Array4f background_color,
+	vec3 *array_beta,
+	vec3 *array_L,
+	vec3 *array_attenuation,
+	float *array_shadow,
+	bool *array_next_end,
+	bool *array_end,
+	Array4f* __restrict__ rgba,
+	float* __restrict__ depth,
+	NerfPayload* __restrict__ payloads,
+	ERenderMode render_mode,
+	bool train_in_linear_colors,
+	Array4f* __restrict__ frame_buffer,
+	float* __restrict__ depth_buffer,
+	float min_transmittance
+) {
+	const uint32_t i = threadIdx.x + blockIdx.x * blockDim.x;
+	if (i >= n_elements) return;
+	NerfPayload& payload = payloads[i];
+
+	Array4f tmp = rgba[i];
+
+	if (!train_in_linear_colors && (render_mode == ERenderMode::Shade || render_mode == ERenderMode::Slice)) {
+		// Accumulate in linear colors
+		tmp.head<3>() = srgb_to_linear(tmp.head<3>());
+	}
+
+	vec3& attenuation = array_attenuation[payload.idx];
+	vec3& beta = array_beta[payload.idx];
+	vec3& L = array_L[payload.idx];
+
+	Array4f acc_beta_rt = {
+		beta[0], beta[1], beta[2], 
+		1
+	};
+
+	frame_buffer[payload.idx] += tmp * Array4f(beta[0]*array_shadow[payload.idx], beta[1]*array_shadow[payload.idx], beta[2]*array_shadow[payload.idx], 1.0f);
+	// frame_buffer[payload.idx] += tmp * Array4f(beta[0], beta[1], beta[2], 1.0f);
+	// frame_buffer[payload.idx] = tmp + frame_buffer[payload.idx] * (1.0f - tmp.w());
+	
+
+	beta = beta * (1.0f - tmp.w());
+	// frame_buffer[payload.idx] += Array4f(L[0], L[1], L[2], 1.) * Array4f(beta[0], beta[1], beta[2], 1.);
+	beta = beta * attenuation;
+
+	float B = (beta[0] + beta[1] + beta[2]) / 3.0;
+	// if (acc_B > 0.2f) {
+	if (B < min_transmittance) {
+		array_next_end[payload.idx] = true;
+	} else {
+		;
+		// if (array_next_end[payload.idx]) { // background
+		// 	frame_buffer[payload.idx] += acc_fb_rt;
+		// }
+		// frame_buffer[payload.idx] = frame_buffer[payload.idx] * color_rt;
+		// frame_buffer[payload.idx] = frame_buffer[payload.idx] + color_rt * (1.0f - tmp.w());
+	}
+
+	if (array_next_end[payload.idx] == true && array_end[payload.idx] == false) {
+		frame_buffer[payload.idx] += background_color * Array4f(beta[0], beta[1], beta[2], (1.0-B));
+		frame_buffer[payload.idx][3] = 1.0f;
+
+		// frame_buffer[payload.idx][0] *= array_shadow[payload.idx];
+		// frame_buffer[payload.idx][1] *= array_shadow[payload.idx];
+		// frame_buffer[payload.idx][2] *= array_shadow[payload.idx];
+		// array_shadow[payload.idx] = 1.0;
+	}
+
+	attenuation = vec3(1.0, 1.0, 1.0);
+	L = vec3(0.0, 0.0, 0.0);
+
+	if (render_mode != ERenderMode::Slice && tmp.w() > 0.2f) {
+		depth_buffer[payload.idx] = depth[i];
+	}
+}
+
+
+// __global__ void shade_kernel_nerf_rt(
+// 	const uint32_t n_elements,
+// 	vec3 *fb,
+// 	vec3 *array_attenuation,
+// 	bool *array_next_end,
+// 	Array4f* __restrict__ rgba,
+// 	float* __restrict__ depth,
+// 	NerfPayload* __restrict__ payloads,
+// 	ERenderMode render_mode,
+// 	bool train_in_linear_colors,
+// 	Array4f* __restrict__ frame_buffer,
+// 	float* __restrict__ depth_buffer,
+// 	float min_transmittance
+// ) {
+// 	const uint32_t i = threadIdx.x + blockIdx.x * blockDim.x;
+// 	if (i >= n_elements) return;
+// 	NerfPayload& payload = payloads[i];
+
+// 	Array4f tmp = rgba[i];
+
+// 	if (!train_in_linear_colors && (render_mode == ERenderMode::Shade || render_mode == ERenderMode::Slice)) {
+// 		// Accumulate in linear colors
+// 		tmp.head<3>() = srgb_to_linear(tmp.head<3>());
+// 	}
+
+// 	vec3& attenuation = array_attenuation[payload.idx];
+// 	vec3& curr_fb = fb[payload.idx];
+
+// 	float acc_B = 1 - std::cbrt(curr_fb[0]*curr_fb[1]*curr_fb[2]) * (1.0f - tmp.w());
+
+	
+// 	attenuation = attenuation * (1.f - acc_B) + acc_B * vec3(1.0, 1.0, 1.0);
+// 	curr_fb = curr_fb * attenuation; 
+	
+// 	// if (i == 0)
+// 	// 	printf("%d acc_B %f %f %f| %f %f %f| %f %f %f attenuation fb %f %f %f\n", 
+// 	// 		n_elements, acc_B, tmp.w(), payload.t,
+// 	// 		tmp[0], tmp[1], tmp[2],
+// 	// 		attenuation[0], attenuation[1], attenuation[2],
+// 	// 		curr_fb[0], curr_fb[1], curr_fb[2]);
+
+// 	// printf("%f %f %f curr_fb\n", curr_fb[0], curr_fb[1], curr_fb[2]);
+// 	// printf("%f %f %f %f attenuation\n", acc_B, attenuation[0], attenuation[1], attenuation[2]);
+
+// 	Array4f acc_fb_rt = {
+// 		curr_fb[0], curr_fb[1], curr_fb[2], 
+// 		// std::cbrt(curr_fb[0]*curr_fb[1]*curr_fb[2])
+// 		1
+// 	};
+
+// 	frame_buffer[payload.idx] += tmp * acc_fb_rt;
+// 	// frame_buffer[payload.idx] = tmp + frame_buffer[payload.idx] * (1.0f - tmp.w());
+	
+// 	curr_fb = curr_fb * (1.0f - tmp.w());
+
+// 	// if (acc_B > 0.2f) {
+// 	if (acc_B > 1.f - min_transmittance) {
+// 		array_next_end[payload.idx] = true;
+// 	} else {
+// 		;
+// 		// if (array_next_end[payload.idx]) { // background
+// 		// 	frame_buffer[payload.idx] += acc_fb_rt;
+// 		// }
+// 		// frame_buffer[payload.idx] = frame_buffer[payload.idx] * color_rt;
+// 		// frame_buffer[payload.idx] = frame_buffer[payload.idx] + color_rt * (1.0f - tmp.w());
+// 	}
+// 	attenuation = vec3(1.0, 1.0, 1.0);
+
+// 	if (render_mode != ERenderMode::Slice && tmp.w() > 0.2f) {
+// 		depth_buffer[payload.idx] = depth[i];
+// 	}
+// }
+
+__global__ void add_background_rt(
+	vec3 *fb,
+	int max_x, int max_y,
+	Array4f* __restrict__ rgba
+) {
+	int i = threadIdx.x + blockIdx.x * blockDim.x;
+	int j = threadIdx.y + blockIdx.y * blockDim.y;
+	if((i >= max_x) || (j >= max_y)) return;
+	int idx = j * max_x + i;
+
+	vec3& color_fb = fb[idx];
+	Array4f color_rt = {color_fb[0], color_fb[1], color_fb[2], 0.0f};
+
+	rgba[idx] = rgba[idx] + color_rt;
+}
+
+
 __global__ void shade_kernel_nerf(
 	const uint32_t n_elements,
 	Array4f* __restrict__ rgba,
@@ -1774,6 +2196,67 @@ __global__ void compact_kernel_nerf(
 		dst_rgba[idx] = src_rgba[i];
 		dst_depth[idx] = src_depth[i];
 	} else if (src_rgba[i].w() > 0.001f) {
+		uint32_t idx = atomicAdd(finalCounter, 1);
+		dst_final_payloads[idx] = src_payload;
+		dst_final_rgba[idx] = src_rgba[i];
+		dst_final_depth[idx] = src_depth[i];
+	}
+}
+
+__global__ void test_rt(
+	const uint32_t n_elements,
+	const ray* rt_rays,
+	Array4f* src_rgba, float* src_depth, NerfPayload* src_payloads,
+	Array4f* dst_rgba, float* dst_depth, NerfPayload* dst_payloads,
+	Array4f* dst_final_rgba, float* dst_final_depth, NerfPayload* dst_final_payloads,
+	uint32_t* counter, uint32_t* finalCounter
+) {
+	const uint32_t i = threadIdx.x + blockIdx.x * blockDim.x;
+	if (i >= n_elements) return;
+
+	NerfPayload& src_payload = src_payloads[i];
+	// float ray_t = rt_rays[src_payload.idx]._time;
+	// printf("(%d,%d,%f)", i, src_payload.idx, ray_t); 
+	printf("(%d,%d)", i, src_payload.idx); 
+
+	// dst_final_rgba[0] = src_rgba[i];
+
+	// if (src_payload.alive) {
+	// 	// uint32_t idx = atomicAdd(counter, 1);
+	// 	// dst_payloads[0] = src_payload;
+	// 	// dst_rgba[idx] = src_rgba[i];
+	// 	// dst_depth[idx] = src_depth[i];
+	// } else if (src_rgba[i].w() > 0.001f || ray_t < 99998.0f) {
+	// 	// uint32_t idx = atomicAdd(finalCounter, 1);
+	// 	// dst_final_payloads[0] = src_payload;
+	// 	src_rgba[i] = src_rgba[i] * 0.;
+	// 	// dst_final_rgba[0] = src_rgba[i];
+	// 	// dst_final_depth[idx] = src_depth[i];
+	// }
+}
+
+
+__global__ void compact_kernel_nerf_rt(
+	const uint32_t n_elements,
+	const ray* rt_rays,
+	Array4f* src_rgba, float* src_depth, NerfPayload* src_payloads,
+	Array4f* dst_rgba, float* dst_depth, NerfPayload* dst_payloads,
+	Array4f* dst_final_rgba, float* dst_final_depth, NerfPayload* dst_final_payloads,
+	uint32_t* counter, uint32_t* finalCounter
+) {
+	const uint32_t i = threadIdx.x + blockIdx.x * blockDim.x;
+	if (i >= n_elements) return;
+
+	NerfPayload& src_payload = src_payloads[i];
+	// float ray_t = rt_rays[src_payload.idx]._time;
+
+	if (src_payload.alive) {
+		uint32_t idx = atomicAdd(counter, 1);
+		dst_payloads[idx] = src_payload;
+		dst_rgba[idx] = src_rgba[i];
+		dst_depth[idx] = src_depth[i];
+	} else if (1) {
+	// } else if (src_rgba[i].w() > 0.001f || ray_t < 99998.0f) {
 		uint32_t idx = atomicAdd(finalCounter, 1);
 		dst_final_payloads[idx] = src_payload;
 		dst_final_rgba[idx] = src_rgba[i];
@@ -1895,6 +2378,152 @@ __global__ void init_rays_with_payload_kernel_nerf(
 	payload.idx = idx;
 	payload.n_steps = 0;
 	payload.alive = true;
+
+
+	// if (x < 2 && y < 2) {
+	// 	// Eigen::Vector3f& tmp = camera_matrix0.col(3);
+	// 	printf("yilingtest %d %d %f %f %f %d\n %f %f %f %d\n", 
+	// 		x, y, ray.o[0], ray.o[1], ray.o[2], payload.alive,
+	// 		camera_matrix0.col(3)[0], camera_matrix0.col(3)[1], camera_matrix0.col(3)[2],
+	// 		lens.mode);
+	// }
+
+}
+
+
+__global__ void init_rays_with_payload_kernel_nerf_rt(
+	uint32_t sample_index,
+	const ray* rt_rays,
+	const bool* rt_array_end,
+	NerfPayload* __restrict__ payloads,
+	Vector2i resolution,
+	Vector2f focal_length,
+	Matrix<float, 3, 4> camera_matrix0,
+	Matrix<float, 3, 4> camera_matrix1,
+	Vector4f rolling_shutter,
+	Vector2f screen_center,
+	Vector3f parallax_shift,
+	bool snap_to_pixel_centers,
+	BoundingBox render_aabb,
+	Matrix3f render_aabb_to_local,
+	float near_distance,
+	float plane_z,
+	float aperture_size,
+	Lens lens,
+	const float* __restrict__ envmap_data,
+	const Vector2i envmap_resolution,
+	Array4f* __restrict__ framebuffer,
+	float* __restrict__ depthbuffer,
+	const float* __restrict__ distortion_data,
+	const Vector2i distortion_resolution,
+	ERenderMode render_mode,
+	Vector2i quilting_dims
+) {
+	uint32_t x = threadIdx.x + blockDim.x * blockIdx.x;
+	uint32_t y = threadIdx.y + blockDim.y * blockIdx.y;
+
+	if (x >= resolution.x() || y >= resolution.y()) {
+		return;
+	}
+
+	uint32_t idx = x + resolution.x() * y;
+
+	NerfPayload& payload = payloads[idx];
+	payload.max_weight = 0.0f;
+	payload.idx = idx;
+	
+
+	const float *o = rt_rays[idx].origin().e;
+	const float *d = rt_rays[idx].direction().e;
+	Ray _ray = {Vector3f(o[0], o[1], o[2]), Vector3f(d[0], d[1], d[2])};
+	if (rt_array_end[idx]) {
+		payload.alive = false;
+		return;
+	} 
+
+	if (quilting_dims != Vector2i::Ones()) {
+		apply_quilting(&x, &y, resolution, parallax_shift, quilting_dims);
+	}
+
+	// TODO: pixel_to_ray also immediately computes u,v for the pixel, so this is somewhat redundant
+	float u = (x + 0.5f) * (1.f / resolution.x());
+	float v = (y + 0.5f) * (1.f / resolution.y());
+	float ray_time = rolling_shutter.x() + rolling_shutter.y() * u + rolling_shutter.z() * v + rolling_shutter.w() * ld_random_val(sample_index, idx * 72239731);
+	// Ray _ray = pixel_to_ray(
+	// 	sample_index,
+	// 	{x, y},
+	// 	resolution.cwiseQuotient(quilting_dims),
+	// 	focal_length,
+	// 	camera_matrix0 * ray_time + camera_matrix1 * (1.f - ray_time),
+	// 	screen_center,
+	// 	parallax_shift,
+	// 	snap_to_pixel_centers,
+	// 	near_distance,
+	// 	plane_z,
+	// 	aperture_size,
+	// 	lens,
+	// 	distortion_data,
+	// 	distortion_resolution
+	// );
+
+
+	if (plane_z < 0) {
+		float n = _ray.d.norm();
+		payload.origin = _ray.o;
+		payload.dir = (1.0f/n) * _ray.d;
+		payload.t = -plane_z*n;
+		payload.idx = idx;
+		payload.n_steps = 0;
+		payload.alive = false;
+		depthbuffer[idx] = -plane_z;
+		return;
+	}
+
+	depthbuffer[idx] = 1e10f;
+
+	_ray.d = _ray.d.normalized();
+
+	if (envmap_data) {
+		framebuffer[idx] = read_envmap(envmap_data, envmap_resolution, _ray.d);
+	}
+
+	float t = fmaxf(render_aabb.ray_intersect(render_aabb_to_local * _ray.o, render_aabb_to_local * _ray.d).x(), 0.0f) + 1e-6f;
+
+	if (!render_aabb.contains(render_aabb_to_local * (_ray.o + _ray.d * t))) {
+		payload.origin = _ray.o;
+		payload.alive = false;
+		return;
+	}
+
+	if (render_mode == ERenderMode::Distortion) {
+		Vector2f offset = Vector2f::Zero();
+		if (distortion_data) {
+			offset += read_image<2>(distortion_data, distortion_resolution, Vector2f((float)x + 0.5f, (float)y + 0.5f).cwiseQuotient(resolution.cast<float>()));
+		}
+		framebuffer[idx].head<3>() = to_rgb(offset * 50.0f);
+		framebuffer[idx].w() = 1.0f;
+		depthbuffer[idx] = 1.0f;
+		payload.origin = _ray.o + _ray.d * 10000.0f;
+		payload.alive = false;
+		return;
+	}
+
+	payload.origin = _ray.o;
+	payload.dir = _ray.d;
+	payload.t = t;
+	payload.idx = idx;
+	payload.n_steps = 0;
+	payload.alive = true;
+
+
+	// if (x < 2 && y < 2) {
+	// 	// Eigen::Vector3f& tmp = camera_matrix0.col(3);
+	// 	printf("yilingtest %d %d %f %f %f %d\n %f %f %f !! %f %f\n", 
+	// 		x, y, _ray.o[0], _ray.o[1], _ray.o[2], payload.alive,
+	// 		camera_matrix0.col(3)[0], camera_matrix0.col(3)[1], camera_matrix0.col(3)[2],
+	// 		payload.t, rt_rays[idx]._time);
+	// }
+
 }
 
 static constexpr float MIN_PDF = 0.01f;
@@ -1960,6 +2589,116 @@ __global__ void safe_divide(const uint32_t num_elements, float* __restrict__ ino
 
 	float local_divisor = divisor[i];
 	inout[i] = local_divisor > 0.0f ? (inout[i] / local_divisor) : 0.0f;
+}
+
+
+
+__global__ void test_debug_rt(
+	Array4f* dst_final_rgba, float* dst_final_depth, NerfPayload* dst_final_payloads
+) {
+	const uint32_t i = threadIdx.x + blockIdx.x * blockDim.x;
+	if (i >= 1) return;
+	dst_final_rgba[0] = dst_final_rgba[0] * 0.f;
+}
+
+
+void Testbed::NerfTracer::init_rays_from_camera_rt(
+	uint32_t sample_index,
+	uint32_t padded_output_width,
+	uint32_t n_extra_dims,
+	const ray* rt_rays,
+	Matrix3f& rt_nerf_rot,
+	Vector3f& rt_nerf_trans,
+	const bool* rt_array_end,
+	const Vector2i& resolution,
+	const Vector2f& focal_length,
+	const Matrix<float, 3, 4>& camera_matrix0,
+	const Matrix<float, 3, 4>& camera_matrix1,
+	const Vector4f& rolling_shutter,
+	const Vector2f& screen_center,
+	const Vector3f& parallax_shift,
+	const Vector2i& quilting_dims,
+	bool snap_to_pixel_centers,
+	const BoundingBox& render_aabb,
+	const Matrix3f& render_aabb_to_local,
+	float near_distance,
+	float plane_z,
+	float aperture_size,
+	const Lens& lens,
+	const float* envmap_data,
+	const Vector2i& envmap_resolution,
+	const float* distortion_data,
+	const Vector2i& distortion_resolution,
+	Eigen::Array4f* frame_buffer,
+	float* depth_buffer,
+	uint8_t* grid,
+	int show_accel,
+	float cone_angle_constant,
+	ERenderMode render_mode,
+	cudaStream_t stream
+) {
+	// Make sure we have enough memory reserved to render at the requested resolution
+	size_t n_pixels = (size_t)resolution.x() * resolution.y();
+	enlarge(n_pixels, padded_output_width, n_extra_dims, stream);
+
+
+	const dim3 threads = { 16, 8, 1 };
+	const dim3 blocks = { div_round_up((uint32_t)resolution.x(), threads.x), div_round_up((uint32_t)resolution.y(), threads.y), 1 };
+
+	// printf("start =======\n");
+	init_rays_with_payload_kernel_nerf_rt<<<blocks, threads, 0, stream>>>(
+		sample_index,
+		rt_rays,
+		rt_array_end,
+		m_rays[0].payload,
+		resolution,
+		focal_length,
+		camera_matrix0,
+		camera_matrix1,
+		rolling_shutter,
+		screen_center,
+		parallax_shift,
+		snap_to_pixel_centers,
+		render_aabb,
+		render_aabb_to_local,
+		near_distance,
+		plane_z,
+		aperture_size,
+		lens,
+		envmap_data,
+		envmap_resolution,
+		frame_buffer,
+		depth_buffer,
+		distortion_data,
+		distortion_resolution,
+		render_mode,
+		quilting_dims
+	);
+
+	m_n_rays_initialized = resolution.x() * resolution.y();
+
+	// printf("init_rays_with_payload_kernel_nerf_rt =======\n");
+	CUDA_CHECK_THROW(cudaMemsetAsync(m_rays[0].rgba, 0, m_n_rays_initialized * sizeof(Array4f), stream));
+	CUDA_CHECK_THROW(cudaMemsetAsync(m_rays[0].depth, 0, m_n_rays_initialized * sizeof(float), stream));
+	// printf("%d m_n_rays_initialized\n", m_n_rays_initialized);
+	linear_kernel(advance_pos_nerf_rt, 0, stream,
+		m_n_rays_initialized,
+		render_aabb,
+		render_aabb_to_local,
+		camera_matrix1.col(2),
+		focal_length,
+		sample_index,
+		rt_rays,
+		rt_nerf_rot,
+		rt_nerf_trans,
+		m_rays[0].payload,
+		grid,
+		(show_accel >= 0) ? show_accel : 0,
+		cone_angle_constant
+	);
+
+	// printf("advance_pos_nerf_rt =======\n");
+
 }
 
 void Testbed::NerfTracer::init_rays_from_camera(
@@ -2045,6 +2784,157 @@ void Testbed::NerfTracer::init_rays_from_camera(
 	);
 }
 
+
+
+uint32_t Testbed::NerfTracer::trace_rt(
+	NerfNetwork<network_precision_t>& network,
+	const ray* rt_rays,
+	Eigen::Matrix3f& rt_nerf_rot,
+	Eigen::Vector3f& rt_nerf_trans,
+	vec3* array_pos,
+	const BoundingBox& render_aabb,
+	const Eigen::Matrix3f& render_aabb_to_local,
+	const BoundingBox& train_aabb,
+	const uint32_t n_training_images,
+	const TrainingXForm* training_xforms,
+	const Vector2f& focal_length,
+	float cone_angle_constant,
+	const uint8_t* grid,
+	ERenderMode render_mode,
+	const Eigen::Matrix<float, 3, 4> &camera_matrix,
+	float depth_scale,
+	int visualized_layer,
+	int visualized_dim,
+	ENerfActivation rgb_activation,
+	ENerfActivation density_activation,
+	int show_accel,
+	float min_transmittance,
+	float glow_y_cutoff,
+	int glow_mode,
+	const float* extra_dims_gpu,
+	cudaStream_t stream
+) {
+	if (m_n_rays_initialized == 0) {
+		return 0;
+	}
+
+
+	CUDA_CHECK_THROW(cudaMemsetAsync(m_hit_counter.data(), 0, sizeof(uint32_t), stream));
+
+	uint32_t n_alive = m_n_rays_initialized;
+
+	uint32_t i = 1;
+	uint32_t double_buffer_index = 0;
+	// uint32_t tmp_hit = 0;
+	while (i < MARCH_ITER) {
+		RaysNerfSoa& rays_current = m_rays[(double_buffer_index + 1) % 2];
+		RaysNerfSoa& rays_tmp = m_rays[double_buffer_index % 2];
+		// printf("double_buffer_index~ %d\n", double_buffer_index % 2); 
+		++double_buffer_index;
+
+		// Compact rays that did not diverge yet
+		{
+			CUDA_CHECK_THROW(cudaMemsetAsync(m_alive_counter.data(), 0, sizeof(uint32_t), stream));
+
+			// linear_kernel(test_rt, 0, stream,
+			// 	n_alive,
+			// 	rt_rays,
+			// 	rays_tmp.rgba, rays_tmp.depth, rays_tmp.payload,
+			// 	rays_current.rgba, rays_current.depth, rays_current.payload,
+			// 	m_rays_hit.rgba, m_rays_hit.depth, m_rays_hit.payload,
+			// 	m_alive_counter.data(), m_hit_counter.data()
+			// );
+			// CUDA_CHECK_THROW(cudaStreamSynchronize(stream)); 
+
+
+			linear_kernel(compact_kernel_nerf_rt, 0, stream,
+				n_alive,
+				rt_rays,
+				rays_tmp.rgba, rays_tmp.depth, rays_tmp.payload,
+				rays_current.rgba, rays_current.depth, rays_current.payload,
+				m_rays_hit.rgba, m_rays_hit.depth, m_rays_hit.payload,
+				m_alive_counter.data(), m_hit_counter.data()
+			);
+
+			CUDA_CHECK_THROW(cudaMemcpyAsync(&n_alive, m_alive_counter.data(), sizeof(uint32_t), cudaMemcpyDeviceToHost, stream));
+			// CUDA_CHECK_THROW(cudaMemcpyAsync(&tmp_hit, m_hit_counter.data(), sizeof(uint32_t), cudaMemcpyDeviceToHost, stream));
+			CUDA_CHECK_THROW(cudaStreamSynchronize(stream));
+		}
+
+		// printf("i MARCH_ITER n_alive %d %d | %d %d\n", 
+		// 	i, MARCH_ITER, 
+		// 	n_alive, tmp_hit);
+
+		if (n_alive == 0) {
+			break;
+		}
+
+		uint32_t n_steps_between_compaction = tcnn::clamp(m_n_rays_initialized / n_alive, (uint32_t)MIN_STEPS_INBETWEEN_COMPACTION, (uint32_t)MAX_STEPS_INBETWEEN_COMPACTION);
+		uint32_t extra_stride = network.n_extra_dims() * sizeof(float);
+		PitchedPtr<NerfCoordinate> input_data((NerfCoordinate*)m_network_input, 1, 0, extra_stride);
+		linear_kernel(generate_next_nerf_network_inputs_rt, 0, stream,
+			n_alive,
+			render_aabb,
+			render_aabb_to_local,
+			train_aabb,
+			focal_length,
+			camera_matrix.col(2),
+			rt_rays,
+			rt_nerf_rot,
+			rt_nerf_trans,
+			rays_current.payload,
+			input_data,
+			n_steps_between_compaction,
+			grid,
+			(show_accel>=0) ? show_accel : 0,
+			cone_angle_constant,
+			extra_dims_gpu
+		);
+		uint32_t n_elements = next_multiple(n_alive * n_steps_between_compaction, tcnn::batch_size_granularity);
+		GPUMatrix<float> positions_matrix((float*)m_network_input, (sizeof(NerfCoordinate) + extra_stride) / sizeof(float), n_elements);
+		GPUMatrix<network_precision_t, RM> rgbsigma_matrix((network_precision_t*)m_network_output, network.padded_output_width(), n_elements);
+		network.inference_mixed_precision(stream, positions_matrix, rgbsigma_matrix);
+
+		linear_kernel(composite_kernel_nerf_rt, 0, stream,
+			n_alive,
+			n_elements,
+			i,
+			train_aabb,
+			glow_y_cutoff,
+			glow_mode,
+			n_training_images,
+			training_xforms,
+			camera_matrix,
+			focal_length,
+			depth_scale,
+			array_pos,
+			rays_current.rgba,
+			rays_current.depth,
+			rays_current.payload,
+			input_data,
+			m_network_output,
+			network.padded_output_width(),
+			n_steps_between_compaction,
+			render_mode,
+			grid,
+			rgb_activation,
+			density_activation,
+			show_accel,
+			min_transmittance
+		);
+
+		i += n_steps_between_compaction;
+	}
+
+	uint32_t n_hit;
+	CUDA_CHECK_THROW(cudaMemcpyAsync(&n_hit, m_hit_counter.data(), sizeof(uint32_t), cudaMemcpyDeviceToHost, stream));
+	
+	// printf("m_hit_counter %d\n", m_hit_counter);
+
+	return n_hit;
+}
+
+
 uint32_t Testbed::NerfTracer::trace(
 	NerfNetwork<network_precision_t>& network,
 	const BoundingBox& render_aabb,
@@ -2104,7 +2994,6 @@ uint32_t Testbed::NerfTracer::trace(
 		}
 
 		uint32_t n_steps_between_compaction = tcnn::clamp(m_n_rays_initialized / n_alive, (uint32_t)MIN_STEPS_INBETWEEN_COMPACTION, (uint32_t)MAX_STEPS_INBETWEEN_COMPACTION);
-
 		uint32_t extra_stride = network.n_extra_dims() * sizeof(float);
 		PitchedPtr<NerfCoordinate> input_data((NerfCoordinate*)m_network_input, 1, 0, extra_stride);
 		linear_kernel(generate_next_nerf_network_inputs, 0, stream,
@@ -2132,7 +3021,6 @@ uint32_t Testbed::NerfTracer::trace(
 		} else if (render_mode == ERenderMode::EncodingVis) {
 			network.visualize_activation(stream, visualized_layer, visualized_dim, positions_matrix, positions_matrix);
 		}
-
 		linear_kernel(composite_kernel_nerf, 0, stream,
 			n_alive,
 			n_elements,
@@ -2238,6 +3126,822 @@ const float* Testbed::get_inference_extra_dims(cudaStream_t stream) const {
 	return dims_gpu;
 }
 
+// ------------------ ray tracing
+#include "camera.cuh"
+#include "sphere.cuh"
+#include "hittable_list.cuh"
+#include "triangle.cuh"
+#include "material.cuh"
+// ------------------ ray tracing
+
+
+void Testbed::init_rt() {
+	m_simple_rt.n_sample = 1;
+	m_simple_rt.n_bounce = 50;
+
+	create_ray_trace_scene(m_simple_rt.d_world, m_simple_rt.d_lightsrc, m_simple_rt.d_shadow);
+
+	m_simple_rt.rt_nerf_rot = (Eigen::Matrix3f() << 1, 0, 0, 0, 1, 0, 0, 0, 1).finished();
+	m_simple_rt.rt_nerf_trans = (Eigen::Vector3f() << 0, 0, 0).finished();
+}
+
+
+
+__global__ void init_ray_rt(
+	ray* array_next_ray,
+	uint32_t sample_index,
+	Vector2i resolution,
+	Vector2f focal_length,
+	Matrix<float, 3, 4> camera_matrix0,
+	Matrix<float, 3, 4> camera_matrix1,
+	Vector4f rolling_shutter,
+	Vector2f screen_center,
+	Vector3f parallax_shift,
+	bool snap_to_pixel_centers,
+	BoundingBox render_aabb,
+	Matrix3f render_aabb_to_local,
+	float near_distance,
+	float plane_z,
+	float aperture_size,
+	Lens lens,
+	const float* __restrict__ envmap_data,
+	const Vector2i envmap_resolution,
+	Array4f* __restrict__ framebuffer,
+	float* __restrict__ depthbuffer,
+	const float* __restrict__ distortion_data,
+	const Vector2i distortion_resolution,
+	ERenderMode render_mode,
+	Vector2i quilting_dims
+) {
+
+	uint32_t x = threadIdx.x + blockDim.x * blockIdx.x;
+	uint32_t y = threadIdx.y + blockDim.y * blockIdx.y;
+
+	if (x >= resolution.x() || y >= resolution.y()) {
+		return;
+	}
+
+	uint32_t idx = x + resolution.x() * y;
+
+	if (plane_z < 0) {
+		aperture_size = 0.0;
+	}
+
+	if (quilting_dims != Vector2i::Ones()) {
+		apply_quilting(&x, &y, resolution, parallax_shift, quilting_dims);
+	}
+
+	// TODO: pixel_to_ray also immediately computes u,v for the pixel, so this is somewhat redundant
+	float u = (x + 0.5f) * (1.f / resolution.x());
+	float v = (y + 0.5f) * (1.f / resolution.y());
+	float ray_time = rolling_shutter.x() + rolling_shutter.y() * u + rolling_shutter.z() * v + rolling_shutter.w() * ld_random_val(sample_index, idx * 72239731);
+	Ray ray = pixel_to_ray(
+		sample_index,
+		{x, y},
+		resolution.cwiseQuotient(quilting_dims),
+		focal_length,
+		camera_matrix0 * ray_time + camera_matrix1 * (1.f - ray_time),
+		screen_center,
+		parallax_shift,
+		snap_to_pixel_centers,
+		near_distance,
+		plane_z,
+		aperture_size,
+		lens,
+		distortion_data,
+		distortion_resolution
+	);
+	array_next_ray[idx].A = vec3(ray.o[0], ray.o[1], ray.o[2]);
+	array_next_ray[idx].B = vec3(ray.d[0], ray.d[1], ray.d[2]);
+	array_next_ray[idx].B = array_next_ray[idx].B / array_next_ray[idx].B.length();
+
+}
+
+__global__ void render_rand_init(int max_x, int max_y, curandState *rand_state, int spp) {
+  int i = threadIdx.x + blockIdx.x * blockDim.x;
+  int j = threadIdx.y + blockIdx.y * blockDim.y;
+  if((i >= max_x) || (j >= max_y)) return;
+  int pixel_index = j*max_x + i;
+  //Each thread gets same seed, a different sequence number, no offset
+  curand_init(spp, pixel_index, 0, &rand_state[pixel_index]);
+}
+
+
+void Testbed::resize_rt(
+	const Vector2i& resolution,
+	const dim3& threads,
+	const dim3& blocks,
+	cudaStream_t stream,
+	int spp
+	) {
+
+	int num_pixels = resolution.x() * resolution.y();
+
+	if (m_simple_rt.is_allocated) {
+		CUDA_CHECK_THROW(cudaFree(m_simple_rt.array_ray));
+		CUDA_CHECK_THROW(cudaFree(m_simple_rt.array_next_ray));
+		CUDA_CHECK_THROW(cudaFree(m_simple_rt.array_attenuation));
+		CUDA_CHECK_THROW(cudaFree(m_simple_rt.array_L));
+		CUDA_CHECK_THROW(cudaFree(m_simple_rt.array_end));
+		CUDA_CHECK_THROW(cudaFree(m_simple_rt.array_next_end));
+		CUDA_CHECK_THROW(cudaFree(m_simple_rt.array_pos));
+		CUDA_CHECK_THROW(cudaFree(m_simple_rt.array_shadow));
+		CUDA_CHECK_THROW(cudaFree(m_simple_rt.array_beta));
+		CUDA_CHECK_THROW(cudaFree(m_simple_rt.agg_fb));
+		CUDA_CHECK_THROW(cudaFree(m_simple_rt.d_rand_state));
+	}
+	CUDA_CHECK_THROW(cudaMallocManaged((void **)&m_simple_rt.array_ray, num_pixels*sizeof(ray)));
+	CUDA_CHECK_THROW(cudaMallocManaged((void **)&m_simple_rt.array_next_ray, num_pixels*sizeof(ray)));
+	CUDA_CHECK_THROW(cudaMallocManaged((void **)&m_simple_rt.array_attenuation, num_pixels*sizeof(vec3)));
+	CUDA_CHECK_THROW(cudaMallocManaged((void **)&m_simple_rt.array_L, num_pixels*sizeof(vec3)));
+	CUDA_CHECK_THROW(cudaMallocManaged((void **)&m_simple_rt.array_end, num_pixels*sizeof(bool)));
+	CUDA_CHECK_THROW(cudaMallocManaged((void **)&m_simple_rt.array_next_end, num_pixels*sizeof(bool)));
+	CUDA_CHECK_THROW(cudaMallocManaged((void **)&m_simple_rt.array_beta, num_pixels*sizeof(vec3)));
+	CUDA_CHECK_THROW(cudaMallocManaged((void **)&m_simple_rt.array_pos, num_pixels*sizeof(vec3)));
+	CUDA_CHECK_THROW(cudaMallocManaged((void **)&m_simple_rt.array_shadow, num_pixels*sizeof(float)));
+	CUDA_CHECK_THROW(cudaMallocManaged((void **)&m_simple_rt.agg_fb, num_pixels*sizeof(vec3)));
+	CUDA_CHECK_THROW(cudaMallocManaged((void **)&m_simple_rt.d_rand_state, num_pixels*sizeof(curandState)));
+	m_simple_rt.is_allocated = true;
+
+	CUDA_CHECK_THROW(cudaMemsetAsync(m_simple_rt.agg_fb, 0, num_pixels * sizeof(vec3), stream));
+
+	render_rand_init<<<blocks, threads>>>(resolution.x(), resolution.y(), m_simple_rt.d_rand_state, spp);
+
+
+}
+
+
+
+__global__ void reset_arrays_rt(
+	Vector2i resolution,
+	bool *array_next_end, 
+	vec3 *array_attenuation,
+	vec3 *array_beta,
+	vec3 *array_L,
+	vec3 *array_pos,
+	float *array_shadow
+) {
+	uint32_t x = threadIdx.x + blockDim.x * blockIdx.x;
+	uint32_t y = threadIdx.y + blockDim.y * blockIdx.y;
+
+	if (x >= resolution.x() || y >= resolution.y()) {
+		return;
+	}
+
+	uint32_t idx = x + resolution.x() * y;
+
+	array_attenuation[idx] = vec3(1.0, 1.0, 1.0);
+	array_next_end[idx] = false;
+	array_beta[idx] = vec3(1.0, 1.0, 1.0);
+	array_L[idx] = vec3(0.0, 0.0, 0.0);
+	array_pos[idx] = vec3(0., 0., 0.);
+	array_shadow[idx] = 1.0;
+}
+
+
+__global__ void rt_device_hittable_size(hittable_list **root, int *result) {
+	*result = (*root)->list_size;
+}
+
+int Testbed::rt_world_size() {
+	int *count_device;
+	int *count_host = new int;
+	checkCudaErrors(cudaMallocManaged((void**)&count_device, sizeof(int)));
+	rt_device_hittable_size <<<1, 1 >>> ((hittable_list**)m_simple_rt.d_world, count_device);
+	checkCudaErrors(cudaGetLastError());
+	checkCudaErrors(cudaDeviceSynchronize());
+	checkCudaErrors(cudaMemcpy(count_host, count_device, sizeof(int), cudaMemcpyDeviceToHost));
+
+	int result = *count_host;
+	checkCudaErrors(cudaFree(count_device));
+	// free(count_device);
+	free(count_host);
+
+	return result;
+}
+
+__global__ void rt_device_hittable_center(hittable_list **root, int idx, vec3 *obj_device) {
+	hittable **list = (*root)->list;
+	*obj_device = list[idx]->center;
+}
+
+Eigen::Vector3f Testbed::rt_hittable_center(int idx) {
+	vec3 *obj_device;
+	vec3 *obj_host = new vec3();
+
+	checkCudaErrors(cudaMallocManaged((void**)&obj_device, sizeof(vec3)));
+	rt_device_hittable_center <<<1, 1 >>> ((hittable_list**)m_simple_rt.d_world, idx, obj_device);
+	checkCudaErrors(cudaGetLastError());
+	checkCudaErrors(cudaDeviceSynchronize());
+	checkCudaErrors(cudaMemcpy(obj_host, obj_device, sizeof(vec3), cudaMemcpyDeviceToHost));
+
+	Eigen::Vector3f result((*obj_host)[0], (*obj_host)[1], (*obj_host)[2]);
+	checkCudaErrors(cudaFree(obj_device));
+	free(obj_host);
+
+	return result;
+
+}
+
+
+__global__ void rt_device_set_hittable_center(hittable_list **root, int idx, vec3 *obj_device) {
+	hittable **list = (*root)->list;
+	list[idx]->center = *obj_device;
+}
+
+__global__ void rt_device_set_hittable_radius(hittable_list **root, int idx, vec3 *obj_device) {
+	hittable **list = (*root)->list;
+	((sphere*) list[idx])->radius = (*obj_device).x();
+}
+
+void Testbed::rt_set_hittable_center(int idx, Eigen::Vector3f c) {
+	vec3 *obj_device;
+	vec3 *obj_host = new vec3(c[0], c[1], c[2]);
+
+	checkCudaErrors(cudaMallocManaged((void**)&obj_device, sizeof(vec3)));
+	checkCudaErrors(cudaMemcpy(obj_device, obj_host, sizeof(vec3), cudaMemcpyHostToDevice));
+
+	rt_device_set_hittable_center <<<1, 1 >>> ((hittable_list**)m_simple_rt.d_world, idx, obj_device);
+	checkCudaErrors(cudaGetLastError());
+	checkCudaErrors(cudaDeviceSynchronize());
+
+	checkCudaErrors(cudaFree(obj_device));
+	free(obj_host);
+}
+
+void Testbed::rt_set_shadow_decay(float c) {
+	m_simple_rt.shadow_decay = c;
+}
+
+
+void Testbed::rt_set_lightsrc_center(int idx, Eigen::Vector3f c) {
+	vec3 *obj_device;
+	vec3 *obj_host = new vec3(c[0], c[1], c[2]);
+
+	checkCudaErrors(cudaMallocManaged((void**)&obj_device, sizeof(vec3)));
+	checkCudaErrors(cudaMemcpy(obj_device, obj_host, sizeof(vec3), cudaMemcpyHostToDevice));
+
+	rt_device_set_hittable_center <<<1, 1 >>> ((hittable_list**)m_simple_rt.d_lightsrc, idx, obj_device);
+	checkCudaErrors(cudaGetLastError());
+	checkCudaErrors(cudaDeviceSynchronize());
+
+	checkCudaErrors(cudaFree(obj_device));
+	free(obj_host);
+}
+
+void Testbed::rt_set_lightsrc_radius(int idx, Eigen::Vector3f c) {
+	vec3 *obj_device;
+	vec3 *obj_host = new vec3(c[0], c[1], c[2]);
+
+	checkCudaErrors(cudaMallocManaged((void**)&obj_device, sizeof(vec3)));
+	checkCudaErrors(cudaMemcpy(obj_device, obj_host, sizeof(vec3), cudaMemcpyHostToDevice));
+
+	rt_device_set_hittable_radius <<<1, 1 >>> ((hittable_list**)m_simple_rt.d_lightsrc, idx, obj_device);
+	checkCudaErrors(cudaGetLastError());
+	checkCudaErrors(cudaDeviceSynchronize());
+
+	checkCudaErrors(cudaFree(obj_device));
+	free(obj_host);
+}
+
+
+void Testbed::set_nerf_rot_trans(Eigen::Matrix3f rot, Eigen::Vector3f trans) {
+	m_simple_rt.rt_nerf_rot = rot;
+	m_simple_rt.rt_nerf_trans = trans;
+}
+
+__global__ void rt_device_set_triangle_verts(hittable_list **root, int idx, vec3 *v1, vec3 *v2, vec3 *v3) {
+	hittable **list = (*root)->list;
+	triangle* tr = (triangle*) list[idx];
+	tr->v1 = *v1;
+	tr->v2 = *v2;
+	tr->v3 = *v3;
+}
+
+
+void Testbed::rt_set_triangle_verts(int idx, Eigen::Vector3f v1, Eigen::Vector3f v2, Eigen::Vector3f v3) {
+	vec3 *d_v1;
+	vec3 *d_v2;
+	vec3 *d_v3;
+	vec3 *h_v1 = new vec3(v1[0], v1[1], v1[2]);
+	vec3 *h_v2 = new vec3(v2[0], v2[1], v2[2]);
+	vec3 *h_v3 = new vec3(v3[0], v3[1], v3[2]);
+
+	checkCudaErrors(cudaMallocManaged((void**)&d_v1, sizeof(vec3)));
+	checkCudaErrors(cudaMemcpy(d_v1, h_v1, sizeof(vec3), cudaMemcpyHostToDevice));
+	checkCudaErrors(cudaMallocManaged((void**)&d_v2, sizeof(vec3)));
+	checkCudaErrors(cudaMemcpy(d_v2, h_v2, sizeof(vec3), cudaMemcpyHostToDevice));
+	checkCudaErrors(cudaMallocManaged((void**)&d_v3, sizeof(vec3)));
+	checkCudaErrors(cudaMemcpy(d_v3, h_v3, sizeof(vec3), cudaMemcpyHostToDevice));
+
+	rt_device_set_triangle_verts <<<1, 1 >>> ((hittable_list**)m_simple_rt.d_world, idx, d_v1, d_v2, d_v3);
+	checkCudaErrors(cudaGetLastError());
+	checkCudaErrors(cudaDeviceSynchronize());
+
+	checkCudaErrors(cudaFree(d_v1));
+	checkCudaErrors(cudaFree(d_v2));
+	checkCudaErrors(cudaFree(d_v3));
+	free(h_v1);
+	free(h_v2);
+	free(h_v3);
+
+}
+
+__global__ void rt_device_update_bvh(bvh_node* root) {
+	root->refit();
+}
+
+void Testbed::rt_update_bvh() {
+
+	rt_device_update_bvh <<<1, 1 >>> ( (bvh_node*) (m_simple_rt.d_world[0]));
+	checkCudaErrors(cudaGetLastError());
+	checkCudaErrors(cudaDeviceSynchronize());
+
+}
+
+
+
+// float Testbed::rt_hittable_radius(int idx);
+// void Testbed::rt_set_hittable_radius(int idx, float r);
+
+void Testbed::init_bounce_rt(
+	uint32_t sample_index,
+	uint32_t padded_output_width,
+	uint32_t n_extra_dims,
+	const ray* rt_rays,
+	const Vector2i& resolution,
+	const Vector2f& focal_length,
+	const Matrix<float, 3, 4>& camera_matrix0,
+	const Matrix<float, 3, 4>& camera_matrix1,
+	const Vector4f& rolling_shutter,
+	const Vector2f& screen_center,
+	const Vector3f& parallax_shift,
+	const Vector2i& quilting_dims,
+	bool snap_to_pixel_centers,
+	const BoundingBox& render_aabb,
+	const Matrix3f& render_aabb_to_local,
+	float near_distance,
+	float plane_z,
+	float aperture_size,
+	const Lens& lens,
+	const float* envmap_data,
+	const Vector2i& envmap_resolution,
+	const float* distortion_data,
+	const Vector2i& distortion_resolution,
+	Eigen::Array4f* frame_buffer,
+	float* depth_buffer,
+	uint8_t* grid,
+	int show_accel,
+	float cone_angle_constant,
+	ERenderMode render_mode,
+	cudaStream_t stream
+	) {
+	
+	const dim3 threads = { 16, 8, 1 };
+	const dim3 blocks = { div_round_up((uint32_t)resolution.x(), threads.x), div_round_up((uint32_t)resolution.y(), threads.y), 1 };
+	init_ray_rt<<<blocks, threads, 0, stream>>>(
+		m_simple_rt.array_next_ray,
+		sample_index,
+		resolution,
+		focal_length,
+		camera_matrix0,
+		camera_matrix1,
+		rolling_shutter,
+		screen_center,
+		parallax_shift,
+		snap_to_pixel_centers,
+		render_aabb,
+		render_aabb_to_local,
+		near_distance,
+		plane_z,
+		aperture_size,
+		lens,
+		envmap_data,
+		envmap_resolution,
+		frame_buffer,
+		depth_buffer,
+		distortion_data,
+		distortion_resolution,
+		render_mode,
+		quilting_dims
+	);
+
+	reset_arrays_rt<<<blocks, threads, 0, stream>>>(
+		resolution, 
+		m_simple_rt.array_next_end, 
+		m_simple_rt.array_attenuation,
+		m_simple_rt.array_beta,
+		m_simple_rt.array_L,
+		m_simple_rt.array_pos,
+		m_simple_rt.array_shadow);
+
+	// initialize_fb<<<blocks, threads>>>(
+    // fb, max_x, max_y);
+
+	// update camera
+
+	// update objects
+
+    // float dist_to_focus = 10.0; (lookfrom-lookat).length();
+    // float aperture = 0.1;
+    // *d_camera   = new camera(lookfrom,
+    //                          lookat,
+    //                          vec3(0,1,0),
+    //                          30.0,
+    //                          float(nx)/float(ny),
+    //                          aperture,
+    //                          dist_to_focus);
+}
+
+
+__global__ void shadow_map(
+	float shadow_decay, vec3 *array_pos, float *array_shadow, bool *array_next_end, 
+	int max_x, int max_y, 
+	hittable **d_world, hittable **d_lightsrc, hittable **d_shadow, 
+	curandState *rand_state) {
+	int i = threadIdx.x + blockIdx.x * blockDim.x;
+	int j = threadIdx.y + blockIdx.y * blockDim.y;
+	if ((i >= max_x) || (j >= max_y)) return;
+	int pixel_index = j*max_x + i;
+
+	// if (!array_next_end[pixel_index]) {
+    //   	// array_shadow[pixel_index] = 1.0;
+	// 	return;
+	// }
+
+	curandState& local_rand_state = rand_state[pixel_index];
+	
+
+    vec3& p = array_pos[pixel_index];
+    // a hack for the rays that do not hit the shadow mesh
+    if (p.length() < 0.0001f) // 
+    	return;
+
+    // vec3 light_src = p + vec3(0., 10., 0.);
+    vec3 light_src = (*d_lightsrc)->sample(&local_rand_state);
+
+    // return;
+    float length = (light_src - p).length() + 0.00001f;
+    vec3 dir = (light_src - p) / length;
+
+    // float light_r = ((sphere *) (((hittable_list*) *world)->list)[g_src])->radius;
+    ray shadow_ray = ray(p, dir);
+
+    hit_record shadow_rec;
+    bool hit = (*d_world)->hit(shadow_ray, 0.001f, length, shadow_rec);
+
+    if (hit) {
+      array_shadow[pixel_index] = shadow_decay;
+    } 
+    else {
+      array_shadow[pixel_index] = 1.0;
+    }
+
+}
+
+
+__global__ void catch_shadow(
+	ray *array_ray, vec3 *array_pos,
+	int max_x, int max_y, hittable **d_shadow, curandState *rand_state) {
+
+	int i = threadIdx.x + blockIdx.x * blockDim.x;
+	int j = threadIdx.y + blockIdx.y * blockDim.y;
+	if((i >= max_x) || (j >= max_y)) return;
+	int pixel_index = j*max_x + i;
+
+
+	ray& cur_ray = array_ray[pixel_index];
+	// curandState local_rand_state = rand_state[pixel_index];
+
+	// if (cur_ray._time < 99998.0f)
+	// 	printf("%f\n", cur_ray._time);
+	hit_record rec;
+
+	if ((*d_shadow)->hit(cur_ray, 0.001f, cur_ray._time, rec)) {
+		array_pos[pixel_index] = rec.p;
+		// if (rec.t < 99998.0f) {
+		if (rec.t > cur_ray._time) {
+			array_pos[pixel_index] = vec3(0., 0., 0.);
+			// printf("hit %f %f\n", cur_ray._time, rec.t - cur_ray._time);
+		}
+		// printf("hit! %f\n", rec.t);
+	}
+	else {
+		array_pos[pixel_index] = vec3(0., 0., 0.);
+	}
+
+}
+
+__global__ void ray_trace(
+	vec3 *array_L, bool *array_end, bool *array_next_end, 
+	vec3 *array_attenuation, ray *array_ray, ray *array_next_ray, 
+	int max_x, int max_y, hittable **world, curandState *rand_state) {
+	int i = threadIdx.x + blockIdx.x * blockDim.x;
+	int j = threadIdx.y + blockIdx.y * blockDim.y;
+	if((i >= max_x) || (j >= max_y)) return;
+	int pixel_index = j*max_x + i;
+
+	array_end[pixel_index] = array_next_end[pixel_index];
+
+	if (array_next_end[pixel_index]) {
+		return;
+	}
+
+
+	ray& cur_ray = array_ray[pixel_index];
+	ray& next_ray = array_next_ray[pixel_index];
+	vec3& cur_attenuation = array_attenuation[pixel_index];
+	// vec3& L = array_L[pixel_index];
+	curandState local_rand_state = rand_state[pixel_index];
+
+	cur_ray = next_ray;
+	
+	hit_record rec;
+
+	// printf("!!!! ~ 0\n");
+	if ((*world)->hit(cur_ray, 0.001f, FLT_MAX, rec)) {
+		// printf("!!!! ~ 1\n");
+		ray scattered;
+		vec3 attenuation;
+		cur_ray._time = rec.t; 
+		// printf("yilingtest ray_trace! %f %f %f\n ! %f %f %f\n !! %f %f %f\n !!!%f\n", 
+		// 	cur_ray.A[0], cur_ray.A[1], cur_ray.A[2],
+		// 	cur_ray.B[0], cur_ray.B[1], cur_ray.B[2],
+		// 	rec.p[0], rec.p[1], rec.p[2],
+		// 	rec.t);
+		
+		if(rec.mat_ptr->scatter(
+		    cur_ray, rec, attenuation, scattered, &local_rand_state)) {
+		    cur_attenuation = attenuation;
+
+			// vec3 unit_direction = unit_vector(cur_ray.direction());
+			// float t = 0.5f*(unit_direction.y() + 1.0f);
+			// L = (1.0f-t)*vec3(1.0, 1.0, 1.0) + t*vec3(0.5, 0.7, 1.0);
+			// L = attenuation;
+
+			// printf("%f %f %f --- attenuation %f %f %f\n", 
+			// 	attenuation[0], attenuation[1], attenuation[2], 
+			// 	cur_attenuation[0], cur_attenuation[1], cur_attenuation[2]);
+		    next_ray = scattered;
+		}
+		else {
+		    array_next_end[pixel_index] = true;
+		}
+	}
+	else {
+		cur_ray._time = 99999.0f;
+		vec3 unit_direction = unit_vector(cur_ray.direction());
+		float t = 0.5f*(unit_direction.y() + 1.0f);
+		// vec3 c = vec3(0.0, 0.0, 0.0);
+		// L = (1.0f-t)*vec3(1.0, 1.0, 1.0) + t*vec3(0.5, 0.7, 1.0);
+		// L = vec3(1.0, 0.0, 0.0);
+		cur_attenuation = vec3(1.0, 1.0, 1.0);
+		array_next_end[pixel_index] = true;
+	}
+
+	// if (i < 2 && j < 2) {
+	// 	// Eigen::Vector3f& tmp = camera_matrix0.col(3);
+	// 	printf("yilingtest -----%d %d %f\n", 
+	// 		i, j, cur_ray._time);
+	// }
+}
+
+__global__ void normalize_sample_rt(
+  Array4f* __restrict__ rgba, vec3 *agg_fb, int max_x, 
+  int max_y, int ns) {
+  int i = threadIdx.x + blockIdx.x * blockDim.x;
+  int j = threadIdx.y + blockIdx.y * blockDim.y;
+  if((i >= max_x) || (j >= max_y)) return;
+  int pixel_index = j*max_x + i;
+  agg_fb[pixel_index] = agg_fb[pixel_index] / float(ns);
+  // rgba[pixel_index][0] = sqrt(agg_fb[pixel_index][0]);
+  // rgba[pixel_index][1] = sqrt(agg_fb[pixel_index][1]);
+  // rgba[pixel_index][2] = sqrt(agg_fb[pixel_index][2]);
+  rgba[pixel_index][0] += agg_fb[pixel_index][0];
+  rgba[pixel_index][1] += agg_fb[pixel_index][1];
+  rgba[pixel_index][2] += agg_fb[pixel_index][2];
+}
+
+
+__global__ void add_sample_rt(
+	Array4f* __restrict__ rgba, vec3 *agg_fb, 
+	int max_x, int max_y) {
+	int i = threadIdx.x + blockIdx.x * blockDim.x;
+	int j = threadIdx.y + blockIdx.y * blockDim.y;
+	if((i >= max_x) || (j >= max_y)) return;
+	int pixel_index = j*max_x + i;
+	agg_fb[pixel_index][0] = rgba[pixel_index][0];
+	agg_fb[pixel_index][1] = rgba[pixel_index][1];
+	agg_fb[pixel_index][2] = rgba[pixel_index][2];
+	rgba[pixel_index][0] = 0.0f;
+	rgba[pixel_index][1] = 0.0f;
+	rgba[pixel_index][2] = 0.0f;
+	// rgba[pixel_index][3] = 0.0f;
+}
+
+
+
+void Testbed::render_nerf_rt(CudaRenderBuffer& render_buffer, const Vector2i& max_res, const Vector2f& focal_length, const Matrix<float, 3, 4>& camera_matrix0, const Matrix<float, 3, 4>& camera_matrix1, const Vector4f& rolling_shutter, const Vector2f& screen_center, cudaStream_t stream) {
+
+	float plane_z = m_slice_plane_z + m_scale;
+
+	ERenderMode render_mode = m_visualized_dimension > -1 ? ERenderMode::EncodingVis : m_render_mode;
+
+	const float* extra_dims_gpu = get_inference_extra_dims(stream);
+
+	ScopeGuard tmp_memory_guard{[&]() {
+		m_nerf.tracer.clear();
+	}};
+
+	// Our motion vector code can't undo f-theta and grid distortions -- so don't render these if DLSS is enabled.
+	bool render_opencv_lens = m_nerf.render_with_lens_distortion && (!render_buffer.dlss() || m_nerf.render_lens.mode == ELensMode::OpenCV);
+	bool render_grid_distortion = m_nerf.render_with_lens_distortion && !render_buffer.dlss();
+
+	Lens lens = render_opencv_lens ? m_nerf.render_lens : Lens{};
+
+
+	const Vector2i& resolution = render_buffer.in_resolution();
+	const dim3 threads = { 16, 8, 1 };
+	const dim3 blocks = { div_round_up((uint32_t)resolution.x(), threads.x), div_round_up((uint32_t)resolution.y(), threads.y), 1 };
+
+	resize_rt(resolution, threads, blocks, stream, render_buffer.spp());
+	printf("spp %d\n", render_buffer.spp());
+	bool is_shadow = true;
+	// bool is_shadow = false;
+	for (int i_sample = 0; i_sample < m_simple_rt.n_sample; i_sample++) {
+		// initialize trace
+
+		init_bounce_rt(
+			render_buffer.spp(),
+			m_network->padded_output_width(),
+			m_nerf_network->n_extra_dims(),
+			m_simple_rt.array_next_ray,
+			render_buffer.in_resolution(),
+			focal_length,
+			camera_matrix0,
+			camera_matrix1,
+			rolling_shutter,
+			screen_center,
+			m_parallax_shift,
+			m_quilting_dims,
+			m_snap_to_pixel_centers,
+			m_render_aabb,
+			m_render_aabb_to_local,
+			m_render_near_distance,
+			plane_z,
+			m_aperture_size,
+			lens,
+			m_envmap.envmap->inference_params(),
+			m_envmap.resolution,
+			render_grid_distortion ? m_distortion.map->inference_params() : nullptr,
+			m_distortion.resolution,
+			render_buffer.frame_buffer(),
+			render_buffer.depth_buffer(),
+			m_nerf.density_grid_bitfield.data(),
+			m_nerf.show_accel,
+			m_nerf.cone_angle_constant,
+			render_mode,
+			stream
+		);
+
+
+		for (int i_bounce = 0; i_bounce < m_simple_rt.n_bounce; i_bounce++)
+		{
+
+			ray_trace<<<blocks, threads, 0, stream>>>(
+				m_simple_rt.array_L, m_simple_rt.array_end, m_simple_rt.array_next_end,
+				m_simple_rt.array_attenuation, 
+				m_simple_rt.array_ray, m_simple_rt.array_next_ray,
+				resolution.x(), resolution.y(), m_simple_rt.d_world, m_simple_rt.d_rand_state);
+			CUDA_CHECK_THROW(cudaStreamSynchronize(stream));
+
+
+			// if (i_bounce == 0 and is_shadow) {
+			if (is_shadow) {
+				catch_shadow<<<blocks, threads, 0, stream>>>(
+					m_simple_rt.array_ray, m_simple_rt.array_pos,
+					resolution.x(), resolution.y(), m_simple_rt.d_shadow, m_simple_rt.d_rand_state);
+				CUDA_CHECK_THROW(cudaStreamSynchronize(stream));
+
+
+				shadow_map<<<blocks, threads, 0, stream>>>(
+					m_simple_rt.shadow_decay, m_simple_rt.array_pos, m_simple_rt.array_shadow, 
+					m_simple_rt.array_next_end, resolution.x(), resolution.y(), m_simple_rt.d_world, m_simple_rt.d_lightsrc, m_simple_rt.d_shadow, m_simple_rt.d_rand_state);
+
+				CUDA_CHECK_THROW(cudaStreamSynchronize(stream));
+			}
+
+
+			m_nerf.tracer.init_rays_from_camera_rt(
+				render_buffer.spp(),
+				m_network->padded_output_width(),
+				m_nerf_network->n_extra_dims(),
+				m_simple_rt.array_ray,
+				m_simple_rt.rt_nerf_rot,
+				m_simple_rt.rt_nerf_trans,
+				m_simple_rt.array_end,
+				render_buffer.in_resolution(),
+				focal_length,
+				camera_matrix0,
+				camera_matrix1,
+				rolling_shutter,
+				screen_center,
+				m_parallax_shift,
+				m_quilting_dims,
+				m_snap_to_pixel_centers,
+				m_render_aabb,
+				m_render_aabb_to_local,
+				m_render_near_distance,
+				plane_z,
+				m_aperture_size,
+				lens,
+				m_envmap.envmap->inference_params(),
+				m_envmap.resolution,
+				render_grid_distortion ? m_distortion.map->inference_params() : nullptr,
+				m_distortion.resolution,
+				render_buffer.frame_buffer(),
+				render_buffer.depth_buffer(),
+				m_nerf.density_grid_bitfield.data(),
+				m_nerf.show_accel,
+				m_nerf.cone_angle_constant,
+				render_mode,
+				stream
+			);
+
+			uint32_t n_hit;
+
+			float depth_scale = 1.0f / m_nerf.training.dataset.scale;
+			n_hit = m_nerf.tracer.trace_rt(
+				*m_nerf_network,
+				m_simple_rt.array_ray,
+				m_simple_rt.rt_nerf_rot,
+				m_simple_rt.rt_nerf_trans,
+				m_simple_rt.array_pos,
+				m_render_aabb,
+				m_render_aabb_to_local,
+				m_aabb,
+				m_nerf.training.n_images_for_training,
+				m_nerf.training.transforms.data(),
+				focal_length,
+				m_nerf.cone_angle_constant,
+				m_nerf.density_grid_bitfield.data(),
+				render_mode,
+				camera_matrix1,
+				depth_scale,
+				m_visualized_layer,
+				m_visualized_dimension,
+				m_nerf.rgb_activation,
+				m_nerf.density_activation,
+				m_nerf.show_accel,
+				m_nerf.render_min_transmittance,
+				m_nerf.glow_y_cutoff,
+				m_nerf.glow_mode,
+				extra_dims_gpu,
+				stream
+			);
+
+			RaysNerfSoa& rays_hit = m_render_mode == ERenderMode::Slice ? m_nerf.tracer.rays_init() : m_nerf.tracer.rays_hit();
+
+
+			linear_kernel(shade_kernel_nerf_rt, 0, stream,
+				n_hit,
+				m_background_color,
+				m_simple_rt.array_beta,
+				m_simple_rt.array_L,
+				m_simple_rt.array_attenuation,
+				m_simple_rt.array_shadow,
+				m_simple_rt.array_next_end,
+				m_simple_rt.array_end,
+				rays_hit.rgba,
+				rays_hit.depth,
+				rays_hit.payload,
+				m_render_mode,
+				m_nerf.training.linear_colors,
+				render_buffer.frame_buffer(),
+				render_buffer.depth_buffer(),
+				m_nerf.render_min_transmittance
+			);
+
+			int _size = render_buffer.frame_buffer()->size();
+			// printf("size %d\n", _size);
+			// printf("resolution %d x %d = %d\n", 
+			// 	resolution.x(), 
+			// 	resolution.y(), 
+			// 	resolution.x() * resolution.y());
+
+			// add_background_rt<<<blocks, threads, 0, stream>>>(
+			// 	m_simple_rt.fb, resolution.x(), resolution.y(), render_buffer.frame_buffer());
+		}
+		// add_sample_rt<<<blocks, threads, 0, stream>>>(
+		// 	render_buffer.frame_buffer(), m_simple_rt.agg_fb, resolution.x(), resolution.y());
+	}
+	// normalize_sample_rt<<<blocks, threads, 0, stream>>>(
+	// 	render_buffer.frame_buffer(), m_simple_rt.agg_fb, resolution.x(), resolution.y(), m_simple_rt.n_sample);
+
+	CUDA_CHECK_THROW(cudaStreamSynchronize(stream));
+}
+
+
 void Testbed::render_nerf(CudaRenderBuffer& render_buffer, const Vector2i& max_res, const Vector2f& focal_length, const Matrix<float, 3, 4>& camera_matrix0, const Matrix<float, 3, 4>& camera_matrix1, const Vector4f& rolling_shutter, const Vector2f& screen_center, cudaStream_t stream) {
 	float plane_z = m_slice_plane_z + m_scale;
 	if (m_render_mode == ERenderMode::Slice) {
@@ -2291,6 +3995,7 @@ void Testbed::render_nerf(CudaRenderBuffer& render_buffer, const Vector2i& max_r
 		stream
 	);
 
+	// m_render_mode = 1 which is shade
 	uint32_t n_hit;
 	if (m_render_mode == ERenderMode::Slice) {
 		n_hit = m_nerf.tracer.n_rays_initialized();
@@ -2323,38 +4028,38 @@ void Testbed::render_nerf(CudaRenderBuffer& render_buffer, const Vector2i& max_r
 	}
 	RaysNerfSoa& rays_hit = m_render_mode == ERenderMode::Slice ? m_nerf.tracer.rays_init() : m_nerf.tracer.rays_hit();
 
-	if (m_render_mode == ERenderMode::Slice) {
-		// Store colors in the normal buffer
-		uint32_t n_elements = next_multiple(n_hit, tcnn::batch_size_granularity);
-		const uint32_t floats_per_coord = sizeof(NerfCoordinate) / sizeof(float) + m_nerf_network->n_extra_dims();
-		const uint32_t extra_stride = m_nerf_network->n_extra_dims() * sizeof(float); // extra stride on top of base NerfCoordinate struct
+	// if (m_render_mode == ERenderMode::Slice) {
+	// 	// Store colors in the normal buffer
+	// 	uint32_t n_elements = next_multiple(n_hit, tcnn::batch_size_granularity);
+	// 	const uint32_t floats_per_coord = sizeof(NerfCoordinate) / sizeof(float) + m_nerf_network->n_extra_dims();
+	// 	const uint32_t extra_stride = m_nerf_network->n_extra_dims() * sizeof(float); // extra stride on top of base NerfCoordinate struct
 
-		m_nerf.vis_input.enlarge(n_elements * floats_per_coord);
-		m_nerf.vis_rgba.enlarge(n_elements);
-		linear_kernel(generate_nerf_network_inputs_at_current_position, 0, stream, n_hit, m_aabb, rays_hit.payload, PitchedPtr<NerfCoordinate>((NerfCoordinate*)m_nerf.vis_input.data(), 1, 0, extra_stride), extra_dims_gpu );
+	// 	m_nerf.vis_input.enlarge(n_elements * floats_per_coord);
+	// 	m_nerf.vis_rgba.enlarge(n_elements);
+	// 	linear_kernel(generate_nerf_network_inputs_at_current_position, 0, stream, n_hit, m_aabb, rays_hit.payload, PitchedPtr<NerfCoordinate>((NerfCoordinate*)m_nerf.vis_input.data(), 1, 0, extra_stride), extra_dims_gpu );
 
-		GPUMatrix<float> positions_matrix((float*)m_nerf.vis_input.data(), floats_per_coord, n_elements);
-		GPUMatrix<float> rgbsigma_matrix((float*)m_nerf.vis_rgba.data(), 4, n_elements);
+	// 	GPUMatrix<float> positions_matrix((float*)m_nerf.vis_input.data(), floats_per_coord, n_elements);
+	// 	GPUMatrix<float> rgbsigma_matrix((float*)m_nerf.vis_rgba.data(), 4, n_elements);
 
-		if (m_visualized_dimension == -1) {
-			m_network->inference(stream, positions_matrix, rgbsigma_matrix);
-			linear_kernel(compute_nerf_rgba, 0, stream, n_hit, m_nerf.vis_rgba.data(), m_nerf.rgb_activation, m_nerf.density_activation, 0.01f, false);
-		} else {
-			m_network->visualize_activation(stream, m_visualized_layer, m_visualized_dimension, positions_matrix, rgbsigma_matrix);
-		}
+	// 	if (m_visualized_dimension == -1) {
+	// 		m_network->inference(stream, positions_matrix, rgbsigma_matrix);
+	// 		linear_kernel(compute_nerf_rgba, 0, stream, n_hit, m_nerf.vis_rgba.data(), m_nerf.rgb_activation, m_nerf.density_activation, 0.01f, false);
+	// 	} else {
+	// 		m_network->visualize_activation(stream, m_visualized_layer, m_visualized_dimension, positions_matrix, rgbsigma_matrix);
+	// 	}
 
-		linear_kernel(shade_kernel_nerf, 0, stream,
-			n_hit,
-			m_nerf.vis_rgba.data(),
-			nullptr,
-			rays_hit.payload,
-			m_render_mode,
-			m_nerf.training.linear_colors,
-			render_buffer.frame_buffer(),
-			render_buffer.depth_buffer()
-		);
-		return;
-	}
+	// 	linear_kernel(shade_kernel_nerf, 0, stream,
+	// 		n_hit,
+	// 		m_nerf.vis_rgba.data(),
+	// 		nullptr,
+	// 		rays_hit.payload,
+	// 		m_render_mode,
+	// 		m_nerf.training.linear_colors,
+	// 		render_buffer.frame_buffer(),
+	// 		render_buffer.depth_buffer()
+	// 	);
+	// 	return;
+	// }
 
 	linear_kernel(shade_kernel_nerf, 0, stream,
 		n_hit,
@@ -2367,17 +4072,17 @@ void Testbed::render_nerf(CudaRenderBuffer& render_buffer, const Vector2i& max_r
 		render_buffer.depth_buffer()
 	);
 
-	if (render_mode == ERenderMode::Cost) {
-		std::vector<NerfPayload> payloads_final_cpu(n_hit);
-		CUDA_CHECK_THROW(cudaMemcpyAsync(payloads_final_cpu.data(), rays_hit.payload, n_hit * sizeof(NerfPayload), cudaMemcpyDeviceToHost, stream));
-		CUDA_CHECK_THROW(cudaStreamSynchronize(stream));
+	// if (render_mode == ERenderMode::Cost) {
+	// 	std::vector<NerfPayload> payloads_final_cpu(n_hit);
+	// 	CUDA_CHECK_THROW(cudaMemcpyAsync(payloads_final_cpu.data(), rays_hit.payload, n_hit * sizeof(NerfPayload), cudaMemcpyDeviceToHost, stream));
+	// 	CUDA_CHECK_THROW(cudaStreamSynchronize(stream));
 
-		size_t total_n_steps = 0;
-		for (uint32_t i = 0; i < n_hit; ++i) {
-			total_n_steps += payloads_final_cpu[i].n_steps;
-		}
-		tlog::info() << "Total steps per hit= " << total_n_steps << "/" << n_hit << " = " << ((float)total_n_steps/(float)n_hit);
-	}
+	// 	size_t total_n_steps = 0;
+	// 	for (uint32_t i = 0; i < n_hit; ++i) {
+	// 		total_n_steps += payloads_final_cpu[i].n_steps;
+	// 	}
+	// 	tlog::info() << "Total steps per hit= " << total_n_steps << "/" << n_hit << " = " << ((float)total_n_steps/(float)n_hit);
+	// }
 }
 
 void Testbed::Nerf::Training::set_camera_intrinsics(int frame_idx, float fx, float fy, float cx, float cy, float k1, float k2, float p1, float p2) {

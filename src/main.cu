@@ -54,6 +54,13 @@ int main(int argc, char** argv) {
 		{'n', 'c', "network", "config"},
 	};
 
+	Flag hybrid_render_flag{
+		parser,
+		"HYBRID_RENDER",
+		"Turn on hybrid render.",
+		{"hybrid-render"},
+	};
+
 	Flag no_gui_flag{
 		parser,
 		"NO_GUI",
@@ -166,6 +173,10 @@ int main(int argc, char** argv) {
 
 		Testbed testbed{mode};
 
+		if (hybrid_render_flag) {
+			testbed.m_hybrid_render = 1;
+		}
+
 		if (scene_flag) {
 			fs::path scene_path = get(scene_flag);
 			if (!scene_path.exists()) {
@@ -224,6 +235,7 @@ int main(int argc, char** argv) {
 		if (gui) {
 			testbed.init_window(width_flag ? get(width_flag) : 1920, height_flag ? get(height_flag) : 1080);
 		}
+
 
 		// Render/training loop
 		while (testbed.frame()) {

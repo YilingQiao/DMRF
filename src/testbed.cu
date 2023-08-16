@@ -1107,7 +1107,8 @@ void Testbed::imgui() {
 			if (uint32_t tricount = m_mesh.indices.size()/3) {
 				ImGui::InputText("##OBJFile", obj_filename_buf, sizeof(obj_filename_buf));
 				if (ImGui::Button("Save it!")) {
-					save_mesh(m_mesh.verts, m_mesh.vert_normals, m_mesh.vert_colors, m_mesh.indices, obj_filename_buf, m_mesh.unwrap, m_nerf.training.dataset.scale, m_nerf.training.dataset.offset);
+					save_mesh(m_mesh.verts, m_mesh.vert_normals, m_mesh.vert_colors, m_mesh.indices, obj_filename_buf, m_mesh.unwrap, 1.0, Eigen::Vector3f::Constant(0.f));
+					// save_mesh(m_mesh.verts, m_mesh.vert_normals, m_mesh.vert_colors, m_mesh.indices, obj_filename_buf, m_mesh.unwrap, m_nerf.training.dataset.scale, m_nerf.training.dataset.offset);
 				}
 				ImGui::SameLine();
 				ImGui::Text("Mesh has %d triangles\n", tricount);
@@ -1294,14 +1295,14 @@ bool Testbed::keyboard_event() {
 	}
 
 	bool shift = ImGui::GetIO().KeyMods & ImGuiKeyModFlags_Shift;
+	// _rt
+	// if (ImGui::IsKeyPressed('Z')) {
+	// 	m_camera_path.m_gizmo_op = ImGuizmo::TRANSLATE;
+	// }
 
-	if (ImGui::IsKeyPressed('Z')) {
-		m_camera_path.m_gizmo_op = ImGuizmo::TRANSLATE;
-	}
-
-	if (ImGui::IsKeyPressed('X')) {
-		m_camera_path.m_gizmo_op = ImGuizmo::ROTATE;
-	}
+	// if (ImGui::IsKeyPressed('X')) {
+	// 	m_camera_path.m_gizmo_op = ImGuizmo::ROTATE;
+	// }
 
 	if (ImGui::IsKeyPressed('E')) {
 		set_exposure(m_exposure + (shift ? -0.5f : 0.5f));
@@ -1387,21 +1388,48 @@ bool Testbed::keyboard_event() {
 
 	// WASD camera movement
 	Vector3f translate_vec = Vector3f::Zero();
+	// _rt
+	// if (ImGui::IsKeyDown('W')) {
+	// 	translate_vec.z() += 1.0f;
+	// }
+	// if (ImGui::IsKeyDown('A')) {
+	// 	translate_vec.x() += -1.0f;
+	// }
+	// if (ImGui::IsKeyDown('S')) {
+	// 	translate_vec.z() += -1.0f;
+	// }
+	// if (ImGui::IsKeyDown('D')) {
+	// 	translate_vec.x() += 1.0f;
+	// }
+	// if (ImGui::IsKeyDown(' ')) {
+	// 	translate_vec.y() += -1.0f;
+	// }
+
 	if (ImGui::IsKeyDown('W')) {
-		translate_vec.z() += 1.0f;
+		keyboard_rt = 'W';
 	}
 	if (ImGui::IsKeyDown('A')) {
-		translate_vec.x() += -1.0f;
+		keyboard_rt = 'A';
 	}
 	if (ImGui::IsKeyDown('S')) {
-		translate_vec.z() += -1.0f;
+		keyboard_rt = 'S';
 	}
 	if (ImGui::IsKeyDown('D')) {
-		translate_vec.x() += 1.0f;
+		keyboard_rt = 'D';
+	}
+	if (ImGui::IsKeyDown('Z')) {
+		keyboard_rt = 'Z';
+	}
+	if (ImGui::IsKeyDown('X')) {
+		keyboard_rt = 'X';
 	}
 	if (ImGui::IsKeyDown(' ')) {
-		translate_vec.y() += -1.0f;
+		keyboard_rt = ' ';
 	}
+
+
+
+
 	if (ImGui::IsKeyDown('C')) {
 		translate_vec.y() += 1.0f;
 	}
@@ -1687,6 +1715,7 @@ void Testbed::train_and_render(bool skip_rendering) {
 		autofocus();
 	}
 
+	// m_picture_in_picture_res = 0
 	if (m_single_view) {
 		// Should have been created when the window was created.
 		assert(!m_render_surfaces.empty());
@@ -2512,6 +2541,9 @@ Testbed::Testbed(ETestbedMode mode)
 	set_exposure(0);
 	set_min_level(0.f);
 	set_max_level(1.f);
+	
+
+	init_rt();
 }
 
 Testbed::~Testbed() {
@@ -2685,7 +2717,12 @@ void Testbed::render_frame(const Matrix<float, 3, 4>& camera_matrix0, const Matr
 	switch (m_testbed_mode) {
 		case ETestbedMode::Nerf:
 			if (!m_render_ground_truth || m_ground_truth_alpha < 1.0f) {
-				render_nerf(render_buffer, max_res, focal_length, camera_matrix0, camera_matrix1, nerf_rolling_shutter, screen_center, m_stream.get());
+				if (m_hybrid_render == 0)
+					render_nerf(render_buffer, max_res, focal_length, camera_matrix0, camera_matrix1, nerf_rolling_shutter, screen_center, m_stream.get());
+				else if (m_hybrid_render == 1) {
+					// printf("m_hybrid_render == 1\n");
+					render_nerf_rt(render_buffer, max_res, focal_length, camera_matrix0, camera_matrix1, nerf_rolling_shutter, screen_center, m_stream.get());
+				}
 			}
 			break;
 		case ETestbedMode::Sdf:

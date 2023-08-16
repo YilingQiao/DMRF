@@ -384,7 +384,8 @@ NerfDataset load_nerf(const std::vector<filesystem::path>& jsonpaths, float shar
 					frames.emplace_back(frames_copy[i]);
 				} else {
 					// tlog::info() << "discarding frame " << frames_copy[i]["file_path"];
-					// fs::remove(basepath / fs::path(std::string(frames_copy[i]["file_path"])));
+					// // fs::remove(basepath / fs::path(std::string(frames_copy[i]["file_path"])));
+					// frames.emplace_back(frames_copy[i]);
 				}
 			}
 		}
