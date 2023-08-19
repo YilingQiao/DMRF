@@ -4,7 +4,7 @@
 
 [Yi-Ling Qiao*](https://ylqiao.net/), [Alexander Gao*](https://gaoalexander.github.io/), [Yiran Xu](https://twizwei.github.io/), [Yue Feng](https://yuefeng21.github.io/), [Jia-Bin Huang](https://jbhuang0604.github.io/), [Ming C. Lin](https://www.cs.umd.edu/~lin/)
 
-[[Project]](https://mesh-aware-rf.github.io/) [[Paper]]([https://mesh-aware-rf.github.io/](https://drive.google.com/file/d/1uXg76v0CNVxgrQfBHPR5SbxIMXyPLFfQ/view?usp=sharing)) 
+[[Project]](https://mesh-aware-rf.github.io/) [[Paper]](https://drive.google.com/file/d/1uXg76v0CNVxgrQfBHPR5SbxIMXyPLFfQ/view?usp=sharing)
 
 
 ## Introduction
