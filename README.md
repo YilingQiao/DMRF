@@ -4,9 +4,7 @@
 
 [Yi-Ling Qiao*](https://ylqiao.net/), [Alexander Gao*](https://gaoalexander.github.io/), [Yiran Xu](https://twizwei.github.io/), [Yue Feng](https://yuefeng21.github.io/), [Jia-Bin Huang](https://jbhuang0604.github.io/), [Ming C. Lin](https://www.cs.umd.edu/~lin/)
 
-[[Project]](https://sites.google.com/view/mesh-aware-rf/home) [[Paper]]()
-
-
+[[Project]](https://mesh-aware-rf.github.io/) 
 
 ## Introduction
 This is an implementation of the ICCV 2023 paper Dynamic Mesh-Aware Radiance Fields.
