@@ -1,0 +1,79 @@
+{
+    "nx": 1200,
+    "ny": 800,
+    "ns": 10,
+    "camera": {
+        "lookfrom": [
+            13,
+            2,
+            3
+        ],
+        "lookat": [
+            0,
+            0,
+            0
+        ],
+        "vup": [
+            0,
+            0,
+            1
+        ],
+        "vfov": 55,
+        "aspect": 2,
+        "aperture": 0.1,
+        "focus_dist": 17.3
+    },
+    "spheres": [
+        {
+            "center": [
+                0.5,
+                0.8,
+                0.5
+            ],
+            "radius": 0.05,
+            "material": 4
+        }
+    ],
+    "objfile": [],
+    "materials": [
+        {
+            "id": 0,
+            "type": "lamberian",
+            "albedo": [
+                0.5,
+                0.5,
+                0.0
+            ]
+        },
+        {
+            "id": 1,
+            "type": "metal",
+            "albedo": [
+                1.0,
+                0.7,
+                0.3
+            ],
+            "fuzz": 0.0
+        },
+        {
+            "id": 2,
+            "type": "dieletric",
+            "albedo": [
+                0.3,
+                0.3,
+                0.3
+            ],
+            "ref_idx": 1.2
+        },
+        {
+            "id": 3,
+            "type": "dieletric",
+            "albedo": [
+                0.3,
+                1.0,
+                0.3
+            ],
+            "ref_idx": 1.2
+        }
+    ]
+}

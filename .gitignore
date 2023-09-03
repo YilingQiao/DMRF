@@ -13,3 +13,6 @@
 __pycache__
 .DS_Store
 imgui.ini
+
+render_output/*
+extra_data/*

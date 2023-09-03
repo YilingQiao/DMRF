@@ -1,0 +1,191 @@
+{
+    "nx": 1200,
+    "ny": 800,
+    "ns": 10,
+    "camera": {
+        "lookfrom": [
+            13,
+            2,
+            3
+        ],
+        "lookat": [
+            0,
+            0,
+            0
+        ],
+        "vup": [
+            0,
+            0,
+            1
+        ],
+        "vfov": 55,
+        "aspect": 2,
+        "aperture": 0.1,
+        "focus_dist": 17.3
+    },
+    "spheres": [
+        {"center": [0.7, 10, 0.7], "radius": 0.2, "material": 1}
+    ],
+    "objfile": [
+        {
+            "dir": "./extra_data/garden_mirror/2_armadillo.obj",
+            "material": 7
+        },
+        {
+            "dir": "./extra_data/garden_mirror/2_bunny.obj",
+            "material": 6
+        },
+        {
+            "dir": "./extra_data/garden_mirror/2_monkey.obj",
+            "material": 12
+        },
+        {
+            "dir": "./extra_data/garden_mirror/mirror3.obj",
+            "material": 2
+        },
+        {
+            "dir": "./extra_data/garden_mirror/transparent_disk.obj",
+            "material": 8
+        },
+        {
+            "dir": "./extra_data/garden_mirror/garden_288_simplified_crop.obj",
+            "material": 11
+        }
+    ],
+    "materials": [
+        {
+            "id": 0,
+            "type": "lightsource",
+            "albedo": [
+                1.0,
+                1.0,
+                1.0
+            ]
+        },
+        {
+            "id": 1,
+            "type": "metal",
+            "albedo": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "fuzz": 0.0
+        },
+        {
+            "id": 2,
+            "type": "metal",
+            "albedo": [
+                0.72,
+                0.45,
+                0.20
+            ],
+            "fuzz": 0.0
+        },
+        {
+            "id": 3,
+            "type": "dieletric",
+            "albedo": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "ref_idx": 1.2
+        },
+        {
+            "id": 4,
+            "type": "metal",
+            "albedo": [
+                0.5,
+                0.5,
+                0.5
+            ],
+            "fuzz": 0.4
+        },
+        {
+            "id": 5,
+            "type": "lamberian",
+            "albedo": [
+                0.0,
+                0.411,
+                0.36
+            ]
+        },
+        {
+            "id": 6,
+            "type": "lamberian",
+            "albedo": [
+                0.95, 0.3176, 0.1176
+            ]
+        },
+        {
+            "id": 7,
+            "type": "dieletric",
+            "albedo": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "ref_idx": 1.0
+        },
+        {
+            "id": 8,
+            "type": "dieletric",
+            "albedo": [
+                1.0,
+                0.5,
+                1.0
+            ],
+            "ref_idx": 1.5
+        },
+        {
+            "id": 9,
+            "type": "dieletric",
+            "albedo": [
+                1.0,
+                1.0,
+                0.0
+            ],
+            "ref_idx": 1.5
+        },
+        {
+            "id": 10,
+            "type": "shadow",
+            "albedo": [
+                0.0,
+                1.0,
+                0.0
+            ]
+        },
+        {
+            "id": 11,
+            "type": "dieletric",
+            "albedo": [
+                1.0,
+                0.8,
+                1.0
+            ],
+            "ref_idx": 1.1
+        },
+        {
+            "id": 12,
+            "type": "dieletric",
+            "albedo": [
+                0.29,
+                0.0,
+                0.51
+            ],
+            "ref_idx": 1.5
+        },
+        {
+            "id": 13,
+            "type": "dieletric",
+            "albedo": [
+                0.58,
+                0.0,
+                0.827
+            ],
+            "ref_idx": 1.5
+        }
+    ]
+}

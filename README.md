@@ -22,9 +22,41 @@ The folder `./simpleRt/` also has CUDA-based raytracing-related functions.
 
 Physics simulation module will be called in python scripts.
 
-
 ## Setup
-TODO
+I build this project with Ubuntu 20.04, gcc 9.4.0, CUDA 11.8.
+```bash
+git clone git@github.com:YilingQiao/DMRF.git
+cd DMRF
+git submodule update --init --recursive
+mkdir build
+cd build
+cmake ..
+make -j
+cd ..
+```
+
 
 ## Demos
-TODO
+
+### Reflective ball
+We can add a reflective ball into the `nerf360/garden` scene. The ball also cast shdows onto the ground. Scene desctiption of the ball, lightsource, and shadow mesh can be found in the configuration file `./scripts/exp/garden_ball.json"`.
+
+```
+python ./scripts/exp_garden_ball.py --mode nerf --load_snapshot ./extra_data/nerf360/garden/35000.msgpack  --width 800 --height 600 --gui
+```
+
+
+### Infinite mirror room
+Since the scene is complex, we choose not to render it in the gui. Images will be saved to `./render_output/garden_mirror/`
+
+```
+python ./scripts/exp_garden_mirror.py --mode nerf --load_snapshot ./extra_data/nerf360/garden/35000.msgpack --width 200 --height 150 --video_spp 4 
+```
+
+
+### Interactive game
+Use `W/S/A/D/Z/X` to control the ball's moving direction. Use `space` to stop the ball
+
+```
+python ./scripts/exp_game.py --mode nerf --load_snapshot ./extra_data/nerf360/kitchen/35000.msgpack --width 800 --height 600 --gui --simulation 
+```

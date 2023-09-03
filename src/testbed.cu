@@ -2543,7 +2543,6 @@ Testbed::Testbed(ETestbedMode mode)
 	set_max_level(1.f);
 	
 
-	init_rt();
 }
 
 Testbed::~Testbed() {

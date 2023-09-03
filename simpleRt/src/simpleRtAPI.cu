@@ -116,24 +116,12 @@ void create_world_cpu(hittable **d_list) {
 // }
 
 
-void create_with_bvh_geometry_shadow(hittable **&d_world, hittable **&d_lightsrc, hittable **&d_shadow) {
+void create_with_bvh_geometry_shadow(
+  const char *config_path, hittable **&d_world, hittable **&d_lightsrc, hittable **&d_shadow) {
   // --------------------- AABB
 
   // ---------------- json scene
   camera *h_camera = NULL; 
-  // char dir[200] = "/home/yiling/Desktop/research/22hybrid/instant-ngp/scripts/exp/teaser_garden_mirror/teaser_garden_mirror_test.json"; // cloth
-  // char dir[200] = "/home/yiling/Desktop/research/22hybrid/instant-ngp/scripts/exp/bonsai/bonsai.json"; // cloth
-  // char dir[200] = "/home/yiling/Desktop/research/22hybrid/instant-ngp/scripts/exp/lamp/lamp_geometry.json"; // 
-  // char dir[200] = "/home/yiling/Desktop/research/22hybrid/instant-ngp/scripts/exp/family_light_source/family_light_source.json"; // 
-  // char dir[200] = "/home/yiling/Desktop/research/22hybrid/instant-ngp/scripts/exp/kitchen_compare/kitchen_material.json"; // 
-  char dir[200] = "/home/yiling/Desktop/research/22hybrid/instant-ngp/scripts/exp/move_chair/chair.json"; // fem 
-  // char dir[200] = "/home/yiling/Desktop/research/22hybrid/instant-ngp/scripts/exp/jump/jump_light.json"; // fem
-  // char dir[200] = "/home/yiling/Desktop/research/22hybrid/instant-ngp/scripts/exp/jump/tmp.json"; // fem
-  // char dir[200] = "/home/yiling/Desktop/research/22hybrid/instant-ngp/scripts/exp/rendering/render_garden_lightsource.json"; // fem
-  // char dir[200] = "/home/yiling/Desktop/research/22hybrid/instant-ngp/scripts/exp/teaser_garden_mirror/teaser_garden_mirror_iccv_lightsource_geom.json"; // cloth
-  // char dir[200] = "/home/yiling/Desktop/research/22hybrid/instant-ngp/simpleRt/assets/family_siggraph.json";
-  // char dir[200] = "/home/yiling/Desktop/research/22hybrid/instant-ngp/simpleRt/assets/monkey.json";
-
   std::vector<hittable*> vec_obj_from_json;
   std::vector<hittable*> vec_lightsrc_list;
   std::vector<hittable*> vec_shadow_list;
@@ -142,7 +130,7 @@ void create_with_bvh_geometry_shadow(hittable **&d_world, hittable **&d_lightsrc
   int nx, ny, ns;
   FileReader::readfile_to_render(
     vec_obj_from_json, vec_lightsrc_list, vec_shadow_list,
-    dir, nx, ny, ns, h_camera);
+    config_path, nx, ny, ns, h_camera);
   int size_obj_from_json = vec_obj_from_json.size();
   int size_lightsrc_list = vec_lightsrc_list.size();
   int size_shadow_list = vec_shadow_list.size();
@@ -424,9 +412,9 @@ __global__ void rand_init(curandState *rand_state) {
 
 
 
-void create_ray_trace_scene(hittable **&d_world, hittable **&d_lightsrc, hittable **&d_shadow) {
+void create_ray_trace_scene(const char *config_path, hittable **&d_world, hittable **&d_lightsrc, hittable **&d_shadow) {
   // create_with_bvh(d_world);
-  create_with_bvh_geometry_shadow(d_world, d_lightsrc, d_shadow);
+  create_with_bvh_geometry_shadow(config_path, d_world, d_lightsrc, d_shadow);
 
   // create_without_bvh2(d_world);
   // create_without_bvh2_light_source(d_world);

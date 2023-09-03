@@ -2380,14 +2380,6 @@ __global__ void init_rays_with_payload_kernel_nerf(
 	payload.alive = true;
 
 
-	// if (x < 2 && y < 2) {
-	// 	// Eigen::Vector3f& tmp = camera_matrix0.col(3);
-	// 	printf("yilingtest %d %d %f %f %f %d\n %f %f %f %d\n", 
-	// 		x, y, ray.o[0], ray.o[1], ray.o[2], payload.alive,
-	// 		camera_matrix0.col(3)[0], camera_matrix0.col(3)[1], camera_matrix0.col(3)[2],
-	// 		lens.mode);
-	// }
-
 }
 
 
@@ -2514,15 +2506,6 @@ __global__ void init_rays_with_payload_kernel_nerf_rt(
 	payload.idx = idx;
 	payload.n_steps = 0;
 	payload.alive = true;
-
-
-	// if (x < 2 && y < 2) {
-	// 	// Eigen::Vector3f& tmp = camera_matrix0.col(3);
-	// 	printf("yilingtest %d %d %f %f %f %d\n %f %f %f !! %f %f\n", 
-	// 		x, y, _ray.o[0], _ray.o[1], _ray.o[2], payload.alive,
-	// 		camera_matrix0.col(3)[0], camera_matrix0.col(3)[1], camera_matrix0.col(3)[2],
-	// 		payload.t, rt_rays[idx]._time);
-	// }
 
 }
 
@@ -3135,11 +3118,11 @@ const float* Testbed::get_inference_extra_dims(cudaStream_t stream) const {
 // ------------------ ray tracing
 
 
-void Testbed::init_rt() {
+void Testbed::init_rt(const char *config_path) {
 	m_simple_rt.n_sample = 1;
 	m_simple_rt.n_bounce = 50;
-
-	create_ray_trace_scene(m_simple_rt.d_world, m_simple_rt.d_lightsrc, m_simple_rt.d_shadow);
+	std::cout << "config_path:\n" << config_path << std::endl;
+	create_ray_trace_scene(config_path, m_simple_rt.d_world, m_simple_rt.d_lightsrc, m_simple_rt.d_shadow);
 
 	m_simple_rt.rt_nerf_rot = (Eigen::Matrix3f() << 1, 0, 0, 0, 1, 0, 0, 0, 1).finished();
 	m_simple_rt.rt_nerf_trans = (Eigen::Vector3f() << 0, 0, 0).finished();
@@ -3664,11 +3647,6 @@ __global__ void ray_trace(
 		ray scattered;
 		vec3 attenuation;
 		cur_ray._time = rec.t; 
-		// printf("yilingtest ray_trace! %f %f %f\n ! %f %f %f\n !! %f %f %f\n !!!%f\n", 
-		// 	cur_ray.A[0], cur_ray.A[1], cur_ray.A[2],
-		// 	cur_ray.B[0], cur_ray.B[1], cur_ray.B[2],
-		// 	rec.p[0], rec.p[1], rec.p[2],
-		// 	rec.t);
 		
 		if(rec.mat_ptr->scatter(
 		    cur_ray, rec, attenuation, scattered, &local_rand_state)) {
@@ -3699,11 +3677,7 @@ __global__ void ray_trace(
 		array_next_end[pixel_index] = true;
 	}
 
-	// if (i < 2 && j < 2) {
-	// 	// Eigen::Vector3f& tmp = camera_matrix0.col(3);
-	// 	printf("yilingtest -----%d %d %f\n", 
-	// 		i, j, cur_ray._time);
-	// }
+
 }
 
 __global__ void normalize_sample_rt(

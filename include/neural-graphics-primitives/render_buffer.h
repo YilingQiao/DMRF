@@ -186,6 +186,10 @@ public:
 		return m_spp;
 	}
 
+	void set_spp(uint32_t spp) {
+		m_spp = spp;
+	}
+
 	Eigen::Array4f* frame_buffer() const {
 		return m_frame_buffer.data();
 	}

@@ -17,7 +17,7 @@
 
 
 void create_world_cpu(hittable **d_list, camera *&d_camera, int nx, int ny);
-void create_ray_trace_scene(hittable **&d_world, hittable **&d_lightsrc, hittable **&d_shadow);
+void create_ray_trace_scene(const char *config_path, hittable **&d_world, hittable **&d_lightsrc, hittable **&d_shadow);
 __global__ void rand_init(curandState *rand_state);
 
 #endif

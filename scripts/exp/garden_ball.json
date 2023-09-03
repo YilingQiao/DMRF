@@ -1,0 +1,86 @@
+{
+    "nx": 1200,
+    "ny": 800,
+    "ns": 10,
+    "camera": {
+        "lookfrom": [
+            13,
+            2,
+            3
+        ],
+        "lookat": [
+            0,
+            0,
+            0
+        ],
+        "vup": [
+            0,
+            0,
+            1
+        ],
+        "vfov": 55,
+        "aspect": 2,
+        "aperture": 0.1,
+        "focus_dist": 17.3
+    },
+    "spheres": [
+        {"center": [0.0, 5, 0.0], "radius": 0.2, "material": 1},
+        {"center": [0.0, 1.0, 0.0], "radius": 0.25, "material": 2}
+    ],
+    "objfile": [
+        {
+            "dir": "./extra_data/garden_ball/ground_plane.obj",
+            "material": 5
+        }
+    ],
+    "materials": [
+        {
+            "id": 0,
+            "type": "lightsource",
+            "albedo": [
+                1.0,
+                1.0,
+                1.0
+            ]
+        },
+        {
+            "id": 1,
+            "type": "metal",
+            "albedo": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "fuzz": 0.0
+        },
+        {
+            "id": 2,
+            "type": "dieletric",
+            "albedo": [
+                1.0,
+                0.0,
+                0.0
+            ],
+            "ref_idx": 1.0
+        },
+        {
+            "id": 3,
+            "type": "dieletric",
+            "albedo": [
+                1.0,
+                0.2,
+                0.2
+            ],
+            "ref_idx": 1.2
+        },
+        {
+            "id": 4,
+            "type": "shadow",
+            "albedo": [
+                0.0,
+                1.0,
+                0.0
+            ]
+        }
+    ]
+}

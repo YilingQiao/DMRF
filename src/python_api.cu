@@ -545,6 +545,12 @@ PYBIND11_MODULE(pyngp, m) {
 	// Add for hybrid
 		.def_readwrite("hybrid_render", &Testbed::m_hybrid_render)
 		.def_readwrite("keyboard_rt", &Testbed::keyboard_rt)
+
+		.def("init_rt", &Testbed::init_rt,
+			py::arg("config_path"),
+			"Initialize ray tracing module"
+		)
+
 	// add for hybrid end
 		.def_readwrite("dynamic_res", &Testbed::m_dynamic_res)
 		.def_readwrite("dynamic_res_target_fps", &Testbed::m_dynamic_res_target_fps)

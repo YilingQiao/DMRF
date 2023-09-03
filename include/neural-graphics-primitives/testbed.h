@@ -32,6 +32,21 @@
 
 #include <filesystem/path.h>
 
+
+// ray tracing -----------------
+#include <curand_kernel.h>
+// // #include "commonCuda/rtweekend.cuh"
+#include "vec3.cuh"
+#include "ray.cuh"
+#include "camera.cuh"
+#include "hittable_list.cuh"
+#include "bvh.cuh"
+#include "FileReader.cuh"
+#include "simpleRtAPI.cuh"
+// // #include "sphere.cuh"
+// // #include "material.cuh"
+// ray tracing -----------------
+
 #ifdef NGP_PYTHON
 #  include <pybind11/pybind11.h>
 #  include <pybind11/numpy.h>
@@ -163,8 +178,73 @@ public:
 			cudaStream_t stream
 		);
 
+		void init_rays_from_camera_rt(
+			uint32_t spp,
+			uint32_t padded_output_width,
+			uint32_t n_extra_dims,
+			const ray* rt_rays,
+			Eigen::Matrix3f& rt_nerf_rot,
+			Eigen::Vector3f& rt_nerf_trans,
+			const bool* rt_array_end,
+			const Eigen::Vector2i& resolution,
+			const Eigen::Vector2f& focal_length,
+			const Eigen::Matrix<float, 3, 4>& camera_matrix0,
+			const Eigen::Matrix<float, 3, 4>& camera_matrix1,
+			const Eigen::Vector4f& rolling_shutter,
+			const Eigen::Vector2f& screen_center,
+			const Eigen::Vector3f& parallax_shift,
+			const Eigen::Vector2i& quilting_dims,
+			bool snap_to_pixel_centers,
+			const BoundingBox& render_aabb,
+			const Eigen::Matrix3f& render_aabb_to_local,
+			float near_distance,
+			float plane_z,
+			float aperture_size,
+			const Lens& lens,
+			const float* envmap_data,
+			const Eigen::Vector2i& envmap_resolution,
+			const float* distortion_data,
+			const Eigen::Vector2i& distortion_resolution,
+			Eigen::Array4f* frame_buffer,
+			float* depth_buffer,
+			uint8_t* grid,
+			int show_accel,
+			float cone_angle_constant,
+			ERenderMode render_mode,
+			cudaStream_t stream
+		);
+
 		uint32_t trace(
 			NerfNetwork<precision_t>& network,
+			const BoundingBox& render_aabb,
+			const Eigen::Matrix3f& render_aabb_to_local,
+			const BoundingBox& train_aabb,
+			const uint32_t n_training_images,
+			const TrainingXForm* training_xforms,
+			const Eigen::Vector2f& focal_length,
+			float cone_angle_constant,
+			const uint8_t* grid,
+			ERenderMode render_mode,
+			const Eigen::Matrix<float, 3, 4> &camera_matrix,
+			float depth_scale,
+			int visualized_layer,
+			int visualized_dim,
+			ENerfActivation rgb_activation,
+			ENerfActivation density_activation,
+			int show_accel,
+			float min_transmittance,
+			float glow_y_cutoff,
+			int glow_mode,
+			const float* extra_dims_gpu,
+			cudaStream_t stream
+		);
+
+		uint32_t trace_rt(
+			NerfNetwork<precision_t>& network,
+			const ray* rt_rays,
+			Eigen::Matrix3f& rt_nerf_rot,
+			Eigen::Vector3f& rt_nerf_trans,
+			vec3* array_pos,
 			const BoundingBox& render_aabb,
 			const Eigen::Matrix3f& render_aabb_to_local,
 			const BoundingBox& train_aabb,
@@ -341,6 +421,110 @@ public:
 		float update_after_training(uint32_t target_batch_size, bool get_loss_scalar, cudaStream_t stream);
 	};
 
+	// ------------------ ray tracing
+	char keyboard_rt = 'Q';
+	void render_nerf_rt(CudaRenderBuffer& render_buffer, const Eigen::Vector2i& max_res, const Eigen::Vector2f& focal_length, const Eigen::Matrix<float, 3, 4>& camera_matrix0, const Eigen::Matrix<float, 3, 4>& camera_matrix1, const Eigen::Vector4f& rolling_shutter, const Eigen::Vector2f& screen_center, cudaStream_t stream);
+	void init_rt(const char *config_path);
+	void resize_rt(
+		const Eigen::Vector2i& resolution,
+		const dim3& threads,
+		const dim3& blocks,
+		cudaStream_t stream,
+		int spp
+	);
+	void init_bounce_rt(
+		uint32_t spp,
+		uint32_t padded_output_width,
+		uint32_t n_extra_dims,
+		const ray* rt_rays,
+		const Eigen::Vector2i& resolution,
+		const Eigen::Vector2f& focal_length,
+		const Eigen::Matrix<float, 3, 4>& camera_matrix0,
+		const Eigen::Matrix<float, 3, 4>& camera_matrix1,
+		const Eigen::Vector4f& rolling_shutter,
+		const Eigen::Vector2f& screen_center,
+		const Eigen::Vector3f& parallax_shift,
+		const Eigen::Vector2i& quilting_dims,
+		bool snap_to_pixel_centers,
+		const BoundingBox& render_aabb,
+		const Eigen::Matrix3f& render_aabb_to_local,
+		float near_distance,
+		float plane_z,
+		float aperture_size,
+		const Lens& lens,
+		const float* envmap_data,
+		const Eigen::Vector2i& envmap_resolution,
+		const float* distortion_data,
+		const Eigen::Vector2i& distortion_resolution,
+		Eigen::Array4f* frame_buffer,
+		float* depth_buffer,
+		uint8_t* grid,
+		int show_accel,
+		float cone_angle_constant,
+		ERenderMode render_mode,
+		cudaStream_t stream
+	);
+
+
+	struct simple_rt {
+		curandState *d_rand_state;
+		hittable **d_list;
+		camera **d_camera;
+		vec3 *array_beta; // all beta
+		vec3 *array_L; // curr illumination
+		vec3 *array_attenuation; // curr beta
+		vec3 *agg_fb;
+		vec3 *array_pos;
+		float *array_shadow;
+		ray *array_ray;
+		ray *array_next_ray;
+		bool *array_end;
+		bool *array_next_end;
+
+
+		hittable **d_world;
+		hittable **d_lightsrc;
+		hittable **d_shadow;
+
+		Eigen::Matrix3f rt_nerf_rot;
+		Eigen::Vector3f rt_nerf_trans;
+
+		bool is_allocated = false;
+
+		int n_sample = 1;
+		int n_bounce = 8;
+		float shadow_decay = 0.0f;
+
+		// int num_hittables = 22*22+1+3;
+
+		// void clear() {
+		// 	indices={};
+		// 	verts={};
+		// 	vert_normals={};
+		// 	vert_colors={};
+		// 	verts_smoothed={};
+		// 	verts_gradient={};
+		// 	trainable_verts=nullptr;
+		// 	verts_optimizer=nullptr;
+		// }
+	};
+
+	int rt_world_size();
+	Eigen::Vector3f rt_hittable_center(int idx);
+	void rt_set_triangle_verts(int idx, Eigen::Vector3f v1, Eigen::Vector3f v2, Eigen::Vector3f v3);
+	void rt_update_bvh();
+	void rt_set_hittable_center(int idx, Eigen::Vector3f c);
+	void rt_set_lightsrc_center(int idx, Eigen::Vector3f c);
+	void rt_set_lightsrc_radius(int idx, Eigen::Vector3f c);
+	void rt_set_shadow_decay(float c);
+	float rt_hittable_radius(int idx);
+	void rt_set_hittable_radius(int idx, float r);
+	void set_nerf_rot_trans(Eigen::Matrix3f rot, Eigen::Vector3f trans);
+
+
+	simple_rt m_simple_rt;
+	// ------------------ ray tracing
+
 	void train_nerf(uint32_t target_batch_size, bool get_loss_scalar, cudaStream_t stream);
 	void train_nerf_step(uint32_t target_batch_size, NerfCounters& counters, cudaStream_t stream);
 	void train_sdf(size_t target_batch_size, bool get_loss_scalar, cudaStream_t stream);
@@ -375,6 +559,8 @@ public:
 #ifdef NGP_PYTHON
 	pybind11::dict compute_marching_cubes_mesh(Eigen::Vector3i res3d = Eigen::Vector3i::Constant(128), BoundingBox aabb = BoundingBox{Eigen::Vector3f::Zero(), Eigen::Vector3f::Ones()}, float thresh=2.5f);
 	pybind11::array_t<float> render_to_cpu(int width, int height, int spp, bool linear, float start_t, float end_t, float fps, float shutter_fraction);
+	pybind11::array_t<float> render_to_cpu_withspp(int width, int height, int special_spp, bool linear, float start_t, float end_t, float fps, float shutter_fraction);
+	
 	pybind11::array_t<float> render_with_rolling_shutter_to_cpu(const Eigen::Matrix<float, 3, 4>& camera_transform_start, const Eigen::Matrix<float, 3, 4>& camera_transform_end, const Eigen::Vector4f& rolling_shutter, int width, int height, int spp, bool linear);
 	pybind11::array_t<float> screenshot(bool linear) const;
 	void override_sdf_training_data(pybind11::array_t<float> points, pybind11::array_t<float> distances);
@@ -461,6 +647,7 @@ public:
 	bool m_train = false;
 	bool m_training_data_available = false;
 	bool m_render = true;
+	int m_hybrid_render = 0; // 0: no hybrid; 1: hybrid render
 	int m_max_spp = 0;
 	ETestbedMode m_testbed_mode = ETestbedMode::Sdf;
 	bool m_max_level_rand_training = false;
@@ -588,6 +775,10 @@ public:
 			bool random_bg_color = true;
 			bool linear_colors = false;
 			ELossType loss_type = ELossType::L2;
+
+			// bool linear_colors = true;
+			// ELossType loss_type = ELossType::RelativeL2;
+
 			ELossType depth_loss_type = ELossType::L1;
 			bool snap_to_pixel_centers = true;
 			bool train_envmap = false;

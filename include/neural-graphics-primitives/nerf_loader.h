@@ -88,6 +88,7 @@ struct NerfDataset {
 	int aabb_scale = 1;
 	bool from_mitsuba = false;
 	bool is_hdr = false;
+	// bool is_hdr = true;
 	bool wants_importance_sampling = true;
 	bool has_rays = false;
 
@@ -181,5 +182,6 @@ struct NerfDataset {
 
 NerfDataset load_nerf(const std::vector<filesystem::path>& jsonpaths, float sharpen_amount = 0.f);
 NerfDataset create_empty_nerf_dataset(size_t n_images, int aabb_scale = 1, bool is_hdr = false);
+// NerfDataset create_empty_nerf_dataset(size_t n_images, int aabb_scale = 1, bool is_hdr = true);
 
 NGP_NAMESPACE_END
