@@ -33,12 +33,11 @@ make -j
 cd ..
 ```
 
-
-
+If you have any issues building/running this project, please try to make sure you can run [InstantNGP](https://github.com/NVlabs/instant-ngp) first (especially its commit `c4d622e`, which is a start point of our project).
 
 ## Demos
 
-First download the data and pretrained NeRF from this [google drive](https://drive.google.com/drive/folders/1n8BJhkSCBqXTN-mkdMdfrM5IpsMzkj61?usp=drive_link).
+Let's download the data and pretrained NeRF from this [google drive](https://drive.google.com/drive/folders/1n8BJhkSCBqXTN-mkdMdfrM5IpsMzkj61?usp=drive_link).
 
 Put them under `DMRF/extra_data`.
 
