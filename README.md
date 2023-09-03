@@ -34,7 +34,13 @@ cd ..
 ```
 
 
+
+
 ## Demos
+
+First download the data and pretrained NeRF from this [google drive](https://drive.google.com/drive/folders/1n8BJhkSCBqXTN-mkdMdfrM5IpsMzkj61?usp=drive_link).
+
+Put them under `DMRF/extra_data`.
 
 ### Reflective ball
 We can add a reflective ball into the `nerf360/garden` scene. The ball also cast shdows onto the ground. Scene desctiption of the ball, lightsource, and shadow mesh can be found in the configuration file `./scripts/exp/garden_ball.json"`.
@@ -49,6 +55,8 @@ python ./scripts/exp_garden_ball.py --mode nerf --load_snapshot ./extra_data/ner
 
 
 ### Infinite mirror room
+Let's go one step further and add more objects into the scene.
+Now the ray can bounce multiple times inside a mirror room.
 Since the scene is complex, we choose not to render it in the gui. Images will be saved to `./render_output/garden_mirror/`
 
 ```
@@ -60,6 +68,10 @@ python ./scripts/exp_garden_mirror.py --mode nerf --load_snapshot ./extra_data/n
 </div>
 
 ### Interactive game
+We can also add a controllable object into NeRF and see how it interact with the scene.
+
+Here we use [Warp](https://github.com/NVIDIA/warp) to compute the dynamics. You might need to install this package first.
+
 Use `W/S/A/D/Z/X` to control the ball's moving direction. Use `space` to stop the ball
 
 ```
