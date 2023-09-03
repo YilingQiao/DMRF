@@ -84,3 +84,13 @@ python ./scripts/exp_game.py --mode nerf --load_snapshot ./extra_data/nerf360/ki
 <div align="center">
 <img width="400px" src="https://github.com/YilingQiao/linkfiles/raw/master/23DMRF/game_counter.gif"> 
 </div>
+
+## BibTex
+```
+@article{qiao2023dmrf,
+  author    = {Yi-Ling Qiao and Alexander Gao and Yiran Xu and Yue Feng and Jia-Bin Huang and Ming C. Lin},
+  title     = {Dynamic Mesh-Aware Radiance Fields},
+  journal   = {ICCV},
+  year      = {2023},
+}
+```
