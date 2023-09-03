@@ -45,6 +45,10 @@ We can add a reflective ball into the `nerf360/garden` scene. The ball also cast
 python ./scripts/exp_garden_ball.py --mode nerf --load_snapshot ./extra_data/nerf360/garden/35000.msgpack  --width 800 --height 600 --gui
 ```
 
+<div align="center">
+<img width="400px" src="https://github.com/YilingQiao/linkfiles/raw/master/23DMRF/garden_ball_shadow.gif"> 
+</div>
+
 
 ### Infinite mirror room
 Since the scene is complex, we choose not to render it in the gui. Images will be saved to `./render_output/garden_mirror/`
@@ -53,6 +57,9 @@ Since the scene is complex, we choose not to render it in the gui. Images will b
 python ./scripts/exp_garden_mirror.py --mode nerf --load_snapshot ./extra_data/nerf360/garden/35000.msgpack --width 200 --height 150 --video_spp 4 
 ```
 
+<div align="center">
+<img width="400px" src="https://github.com/YilingQiao/linkfiles/raw/master/23DMRF/garden_mirror_monkey.gif"> 
+</div>
 
 ### Interactive game
 Use `W/S/A/D/Z/X` to control the ball's moving direction. Use `space` to stop the ball
@@ -60,3 +67,7 @@ Use `W/S/A/D/Z/X` to control the ball's moving direction. Use `space` to stop th
 ```
 python ./scripts/exp_game.py --mode nerf --load_snapshot ./extra_data/nerf360/kitchen/35000.msgpack --width 800 --height 600 --gui --simulation 
 ```
+
+<div align="center">
+<img width="400px" src="https://github.com/YilingQiao/linkfiles/raw/master/23DMRF/game_counter.gif"> 
+</div>
