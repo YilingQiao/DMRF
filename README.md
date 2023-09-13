@@ -37,6 +37,13 @@ cd ..
 
 If you have any issues building/running this project, please try to make sure you can run [InstantNGP](https://github.com/NVlabs/instant-ngp) first (especially its commit `c4d622e`, which is a start point of our project).
 
+## TODOs
+1. An end-to-end tutorial for training NeRF, estimating light source and geometry, inserting mesh, and rendering.
+
+2. An introduction to the config file system and code structure.
+
+3. Other scenes presented in the paper.
+
 ## Demos
 
 Let's download the data and pretrained NeRF from this [google drive](https://drive.google.com/drive/folders/1n8BJhkSCBqXTN-mkdMdfrM5IpsMzkj61?usp=drive_link).
@@ -87,10 +94,7 @@ python ./scripts/exp_game.py --mode nerf --load_snapshot ./extra_data/nerf360/ki
 <img width="400px" src="https://github.com/YilingQiao/linkfiles/raw/master/23DMRF/game_counter.gif"> 
 </div>
 
-### TODOs
-1. An end-to-end tutorial for training NeRF, estimating light source and geometry, inserting mesh, and rendering.
 
-2. Other scenes presented in the paper.
 
 ## BibTex
 ```
