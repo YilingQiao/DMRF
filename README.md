@@ -87,6 +87,11 @@ python ./scripts/exp_game.py --mode nerf --load_snapshot ./extra_data/nerf360/ki
 <img width="400px" src="https://github.com/YilingQiao/linkfiles/raw/master/23DMRF/game_counter.gif"> 
 </div>
 
+### TODOs
+1. An end-to-end tutorial for training NeRF, estimating light source and geometry, inserting mesh, and rendering.
+
+2. Other scenes presented in the paper.
+
 ## BibTex
 ```
 @article{qiao2023dmrf,
