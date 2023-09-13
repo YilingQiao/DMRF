@@ -94,7 +94,13 @@ python ./scripts/exp_game.py --mode nerf --load_snapshot ./extra_data/nerf360/ki
 <img width="400px" src="https://github.com/YilingQiao/linkfiles/raw/master/23DMRF/game_counter.gif"> 
 </div>
 
+## Run with your own data
 
+### Preprocess
+You can refer to this [tutorial](preprocess/README.md) for preprocessing your own data.
+
+### Config file
+TODO. An explanation of the config file system. 
 
 ## BibTex
 ```
