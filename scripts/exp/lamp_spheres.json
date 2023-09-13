@@ -1,0 +1,71 @@
+{
+	"nx": 1200,
+	"ny": 800,
+	"ns": 10,
+	"camera": {
+		"lookfrom": [
+			13,
+			2,
+			3
+		],
+		"lookat": [
+			0,
+			0,
+			0
+		],
+		"vup": [
+			0,
+			0,
+			1
+		],
+		"vfov": 55,
+		"aspect": 2,
+		"aperture": 0.1,
+		"focus_dist": 17.3
+	},
+	"spheres": [],
+	"objfile": [
+		{
+			"dir": "extra_data/3d_assets/lamp/lighting_estimated.obj",
+			"material": 1
+		},
+		{
+			"dir": "extra_data/3d_assets/lamp/mesh_simplified.obj",
+			"material": 2
+		},
+		{
+			"dir": "extra_data/3d_assets/lamp/spheres.obj",
+			"material": 3
+		}
+	],
+	"materials": [
+		{
+			"id": 0,
+			"type": "lightsource",
+			"albedo": [
+				1.0,
+				1.0,
+				1.0
+			]
+		},
+		{
+			"id": 1,
+			"type": "shadow",
+			"albedo": [
+				0.42,
+				0.0,
+				0.0
+			],
+			"fuzz": 0.4
+		},
+		{
+			"id": 2,
+			"type": "lamberian",
+			"albedo": [
+				0.8,
+				0.8,
+				0.8
+			]
+		}
+	]
+}
