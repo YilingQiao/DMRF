@@ -23,7 +23,7 @@ The folder `./simpleRt/` also has CUDA-based raytracing-related functions.
 Physics simulation module will be called in python scripts.
 
 ## Setup
-I build this project with Ubuntu 20.04, gcc 9.4.0, CUDA 11.8.
+This project has been tested with Ubuntu 20.04, gcc 9.4.0, CUDA 11.8.
 ```bash
 git clone git@github.com:YilingQiao/DMRF.git
 cd DMRF

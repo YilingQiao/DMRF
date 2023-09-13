@@ -5,3 +5,6 @@ opencv-python-headless
 pybind11
 scipy
 tqdm
+torch
+mitsuba
+drjit
