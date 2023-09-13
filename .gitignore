@@ -16,3 +16,4 @@ imgui.ini
 
 render_output/*
 extra_data/*
+.idea/*
