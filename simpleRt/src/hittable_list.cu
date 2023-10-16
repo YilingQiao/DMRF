@@ -48,8 +48,8 @@ __device__ bool hittable_list::hit(const ray& r, float t_min, float t_max,
 	bool hit_anything = false;
 	double closest_so_far = t_max;
 	for (int i = 0; i < list_size; i++) {
-		if (type_lightsource == list[i]->mat_ptr->type)
-			continue;
+		// if (type_lightsource == list[i]->mat_ptr->type)
+		// 	continue;
 		if (list[i]->hit(r, t_min, closest_so_far, temp_rec)) {
 			hit_anything = true;
 			closest_so_far = temp_rec.t;

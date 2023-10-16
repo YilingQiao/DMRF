@@ -239,6 +239,26 @@ bool FileReader::readfile_to_render(
 					json_tree["materials"][i]["albedo"][2].GetDouble()));
 
 			mat_type[i] = 1;
+
+			// ((lightsource*) mat_list[i])->set_lookat(
+			// 	vec3(
+			// 		json_tree["materials"][i]["lookat"][0].GetDouble(),
+			// 		json_tree["materials"][i]["lookat"][1].GetDouble(),
+			// 		json_tree["materials"][i]["lookat"][2].GetDouble()));
+
+
+			// ((lightsource*) mat_list[i])->set_falloff_start_angle(
+			// 	json_tree["materials"][i]["falloff_start_angle"].GetDouble()
+			// );
+
+			// ((lightsource*) mat_list[i])->set_falloff_end_angle(
+			// 	json_tree["materials"][i]["falloff_end_angle"].GetDouble()
+			// );
+
+
+			// vec3 lookat(0., -1., 0.);
+
+
 		}
 		else if (((strcmp(json_tree["materials"][i]["type"].GetString(), "shadow") == 0)))
 		{
@@ -293,7 +313,6 @@ bool FileReader::readfile_to_render(
 
 	}
 
-	//o_list_size = sphere_cnt;
 	for (int i = 0; i < obj_cnt; i++) {
 
 		if (mat_type[json_tree["objfile"][i]["material"].GetInt() - 1] == 1) {

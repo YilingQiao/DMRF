@@ -441,6 +441,20 @@ PYBIND11_MODULE(pyngp, m) {
 		.def("rt_set_shadow_decay", &Testbed::rt_set_shadow_decay, "set shadow_decay",
 			py::arg("c")
 		)
+
+		.def("rt_set_light_falloff_start_angle", &Testbed::rt_set_light_falloff_start_angle, "set lightsrc",
+			py::arg("v")
+		)
+		.def("rt_set_light_falloff_end_angle", &Testbed::rt_set_light_falloff_end_angle, "set lightsrc",
+			py::arg("v")
+		)
+		.def("rt_set_light_lookat", &Testbed::rt_set_light_lookat, "set lightsrc",
+			py::arg("v")
+		)
+		.def("rt_set_light_albedo", &Testbed::rt_set_light_albedo, "set lightsrc",
+			py::arg("v")
+		)
+
 		.def("set_nerf_rot_trans", &Testbed::set_nerf_rot_trans, "set rot and trans of nerf",
 			py::arg("rot"),
 			py::arg("trans")

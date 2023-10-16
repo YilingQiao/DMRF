@@ -495,6 +495,11 @@ public:
 		int n_bounce = 8;
 		float shadow_decay = 0.0f;
 
+		float light_falloff_start_angle = 1.5707963;
+		float light_falloff_end_angle = 1.5707964;
+		vec3 light_lookat = vec3(0., 0., 0.);
+		vec3 light_albedo = vec3(1., 1., 1.);
+
 		// int num_hittables = 22*22+1+3;
 
 		// void clear() {
@@ -517,6 +522,14 @@ public:
 	void rt_set_lightsrc_center(int idx, Eigen::Vector3f c);
 	void rt_set_lightsrc_radius(int idx, Eigen::Vector3f c);
 	void rt_set_shadow_decay(float c);
+
+
+	void rt_set_light_falloff_start_angle(float v);
+	void rt_set_light_falloff_end_angle(float v); 
+	void rt_set_light_lookat(Eigen::Vector3f v);
+	void rt_set_light_albedo(Eigen::Vector3f v);;
+
+
 	float rt_hittable_radius(int idx);
 	void rt_set_hittable_radius(int idx, float r);
 	void set_nerf_rot_trans(Eigen::Matrix3f rot, Eigen::Vector3f trans);

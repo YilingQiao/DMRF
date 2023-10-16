@@ -27,6 +27,11 @@ __host__ __device__ lambertian::lambertian(const vec3& a) : albedo(a) {
 
 __host__ __device__ lightsource::lightsource(const vec3& a) : albedo(a) {
 	type = type_lightsource;
+
+	// falloff_start_angle = 1.5707963;
+	// falloff_end_angle = 1.5707964;
+	// lookat = vec3(0., 0., 0.);
+	// albedo = vec3(1., 1., 1.);
 }
 
 __host__ __device__ metal::metal(const vec3& a, float f) : albedo(a) {
@@ -40,11 +45,11 @@ __host__ __device__ dielectric::dielectric(const vec3& a, float ri) : albedo(a),
 
 __device__ bool lambertian::scatter(const ray& r_in, const hit_record& rec,
 	vec3& attenuation, ray& scattered, curandState *pixel_random_seed) {
-	vec3 neww_direction;
+	vec3 new_direction;
 	do {
-		neww_direction = rec.normal + random_in_unit_sphere(pixel_random_seed);
-	} while (neww_direction.length() < 0.0000001f);
-	scattered = ray(rec.p, neww_direction);
+		new_direction = rec.normal + random_in_unit_sphere(pixel_random_seed);
+	} while (new_direction.length() < 0.0000001f);
+	scattered = ray(rec.p, new_direction);
 
 	// vec3 target = rec.p + rec.normal + random_in_unit_sphere(pixel_random_seed);
 	// scattered = ray(rec.p, target - rec.p);
@@ -68,19 +73,43 @@ __device__ bool metal::scatter(const ray& r_in, const hit_record& rec,
 
 __device__ bool lightsource::scatter(const ray& r_in, const hit_record& rec,
 	vec3& attenuation, ray& scattered, curandState *pixel_random_seed) {
+	vec3 new_direction;
+	do {
+		new_direction = rec.normal + random_in_unit_sphere(pixel_random_seed);
+	} while (new_direction.length() < 0.0000001f);
+	scattered = ray(rec.p, new_direction);
 
-	float fuzz = 0.;
-	// two-sided metal
-	vec3 normal = rec.normal;
-	if (dot(r_in.direction(), rec.normal) > 0)
-		normal = - rec.normal;
-
-	vec3 reflected = reflect(unit_vector(r_in.direction()), normal);
-	scattered = ray(rec.p, reflected + fuzz * random_in_unit_sphere(pixel_random_seed));
+	// vec3 target = rec.p + rec.normal + random_in_unit_sphere(pixel_random_seed);
+	// scattered = ray(rec.p, target - rec.p);
 	attenuation = albedo;
-	return (dot(scattered.direction(), normal) > 0);
+	return true;
 }
 
+// __host__ __device__ void lightsource::set_falloff_start_angle(float angle) {
+// 	falloff_start_angle = angle;
+// }
+
+// __host__ __device__ void lightsource::set_falloff_end_angle(float angle) {
+// 	falloff_end_angle = angle;
+// }
+
+// __device__ vec3 lightsource::get_lookat() {
+
+// 	// return vec3(1.23, 1.23, 1.23);
+// 	return vec3(falloff_start_angle, falloff_start_angle, falloff_start_angle);
+// 	// return vec3(albedo[0], albedo[0], albedo[0]);
+// 	// return albedo;
+// }
+
+// __host__ __device__ void  lightsource::set_lookat(const vec3& l) {
+// 	lookat = l;
+// 	if (lookat.length() < 1e-6) {
+// 		lookat = vec3(0., 0., 0.);
+// 	}
+// 	else {
+// 		lookat = lookat / lookat.length();
+// 	}
+// }
 
 __device__ bool dielectric::scatter(const ray& r_in, const hit_record& rec,
 	vec3& attenuation, ray& scattered, curandState *pixel_random_seed) {

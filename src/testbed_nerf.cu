@@ -3357,6 +3357,25 @@ void Testbed::rt_set_shadow_decay(float c) {
 }
 
 
+void Testbed::rt_set_light_falloff_start_angle(float v) {
+	m_simple_rt.light_falloff_start_angle = v;
+}
+
+void Testbed::rt_set_light_falloff_end_angle(float v) {
+	m_simple_rt.light_falloff_end_angle = v;
+}
+
+void Testbed::rt_set_light_lookat(Eigen::Vector3f v) {
+	vec3 v3 = vec3(v[0], v[1], v[2]);
+	m_simple_rt.light_lookat = v3 / (v3.length() + 1e-6);
+}
+
+void Testbed::rt_set_light_albedo(Eigen::Vector3f v) {
+	vec3 v3 = vec3(v[0], v[1], v[2]);
+	m_simple_rt.light_albedo = v3;
+}
+
+
 void Testbed::rt_set_lightsrc_center(int idx, Eigen::Vector3f c) {
 	vec3 *obj_device;
 	vec3 *obj_host = new vec3(c[0], c[1], c[2]);
@@ -3538,7 +3557,10 @@ void Testbed::init_bounce_rt(
 
 
 __global__ void shadow_map(
-	float shadow_decay, vec3 *array_pos, float *array_shadow, bool *array_next_end, 
+	float shadow_decay, 
+	float light_falloff_start_angle, float light_falloff_end_angle, 
+	vec3 light_lookat, vec3 light_albedo, 
+	vec3 *array_pos, float *array_shadow, bool *array_next_end, 
 	int max_x, int max_y, 
 	hittable **d_world, hittable **d_lightsrc, hittable **d_shadow, 
 	curandState *rand_state) {
@@ -3570,14 +3592,40 @@ __global__ void shadow_map(
     // float light_r = ((sphere *) (((hittable_list*) *world)->list)[g_src])->radius;
     ray shadow_ray = ray(p, dir);
 
-    hit_record shadow_rec;
-    bool hit = (*d_world)->hit(shadow_ray, 0.001f, length, shadow_rec);
+    hit_record rec;
+    bool hit = (*d_world)->hit(shadow_ray, 0.001f, length, rec);
 
+
+	hit_record shadow_mesh_rec;
+	bool shadow_mesh_hit = (*d_shadow)->hit(shadow_ray, 0.001f, length, shadow_mesh_rec);
+
+    // if (hit | shadow_mesh_hit) {
     if (hit) {
-      array_shadow[pixel_index] = shadow_decay;
+        array_shadow[pixel_index] = shadow_decay;
     } 
     else {
-      array_shadow[pixel_index] = 1.0;
+    	dir = -dir;
+
+        vec3 lookat = light_lookat;
+        // vec3 lookat = vec3(0., -1., 0.);
+        // float falloff_start = std::cos(0.3);
+        float falloff_start = std::cos(light_falloff_start_angle);
+        // float falloff_end = std::cos(0.5);
+        float falloff_end = std::cos(light_falloff_end_angle);
+
+        float intensity = light_albedo.length();
+        // float intensity = 10.;
+        float corr = dir[0]*lookat[0] + dir[1]*lookat[1] + dir[2]*lookat[2];
+
+        if (corr < falloff_end)
+        	corr = 0;
+        else if (corr < falloff_start)
+        	corr = (corr - falloff_end) / (falloff_start - falloff_end) * falloff_start;
+
+        if (lookat.length() < 1e-6)
+        	corr = 1.0;
+        // array_shadow[pixel_index] = 1.0;
+        array_shadow[pixel_index] = 1 + intensity * corr;
     }
 
 }
@@ -3618,7 +3666,13 @@ __global__ void catch_shadow(
 __global__ void ray_trace(
 	vec3 *array_L, bool *array_end, bool *array_next_end, 
 	vec3 *array_attenuation, ray *array_ray, ray *array_next_ray, 
-	int max_x, int max_y, hittable **world, curandState *rand_state) {
+	int max_x, int max_y, hittable **world, 
+
+	hittable **d_lightsrc, 
+	float light_falloff_start_angle, float light_falloff_end_angle, 
+    vec3 light_lookat, vec3 light_albedo, 
+
+	curandState *rand_state) {
 	int i = threadIdx.x + blockIdx.x * blockDim.x;
 	int j = threadIdx.y + blockIdx.y * blockDim.y;
 	if((i >= max_x) || (j >= max_y)) return;
@@ -3639,6 +3693,39 @@ __global__ void ray_trace(
 
 	cur_ray = next_ray;
 	
+
+
+	hit_record rec_lightsrc;
+    // bool hit_lightsrc = (*world)->hit(cur_ray, 0.001f, FLT_MAX, rec_lightsrc);
+    bool hit_lightsrc = (*d_lightsrc)->hit(cur_ray, 0.001f, FLT_MAX, rec_lightsrc);
+    if (hit_lightsrc) {
+    	// printf("hit_lightsrc!\n")
+		cur_ray._time = rec_lightsrc.t;
+
+		vec3 dir = - unit_vector(cur_ray.direction());
+        vec3 lookat = light_lookat;
+        float falloff_start = std::cos(light_falloff_start_angle);
+        float falloff_end = std::cos(light_falloff_end_angle);
+
+        float intensity = light_albedo.length();
+        float corr = dir[0]*lookat[0] + dir[1]*lookat[1] + dir[2]*lookat[2];
+
+        if (corr < falloff_end)
+            corr = 0;
+        else if (corr < falloff_start)
+            corr = (corr - falloff_end) / (falloff_start - falloff_end) * falloff_start;
+
+        if (lookat.length() < 1e-6)
+            corr = 1.0;
+
+		cur_attenuation = vec3(1.0, 1.0, 1.0) + light_albedo * corr;
+		// cur_attenuation = vec3(1.0, 1.0, 1.0);
+        // printf("%f %f %f cur_attenuation\n", cur_attenuation[0], cur_attenuation[1], cur_attenuation[2]);
+		array_next_end[pixel_index] = true;
+		return;
+    }
+
+
 	hit_record rec;
 
 	// printf("!!!! ~ 0\n");
@@ -3667,9 +3754,13 @@ __global__ void ray_trace(
 		}
 	}
 	else {
+
 		cur_ray._time = 99999.0f;
 		vec3 unit_direction = unit_vector(cur_ray.direction());
 		float t = 0.5f*(unit_direction.y() + 1.0f);
+
+
+
 		// vec3 c = vec3(0.0, 0.0, 0.0);
 		// L = (1.0f-t)*vec3(1.0, 1.0, 1.0) + t*vec3(0.5, 0.7, 1.0);
 		// L = vec3(1.0, 0.0, 0.0);
@@ -3786,7 +3877,13 @@ void Testbed::render_nerf_rt(CudaRenderBuffer& render_buffer, const Vector2i& ma
 				m_simple_rt.array_L, m_simple_rt.array_end, m_simple_rt.array_next_end,
 				m_simple_rt.array_attenuation, 
 				m_simple_rt.array_ray, m_simple_rt.array_next_ray,
-				resolution.x(), resolution.y(), m_simple_rt.d_world, m_simple_rt.d_rand_state);
+				resolution.x(), resolution.y(), m_simple_rt.d_world, 
+
+				m_simple_rt.d_lightsrc,
+				m_simple_rt.light_falloff_start_angle, m_simple_rt.light_falloff_end_angle, 
+				m_simple_rt.light_lookat, m_simple_rt.light_albedo, 
+
+				m_simple_rt.d_rand_state);
 			CUDA_CHECK_THROW(cudaStreamSynchronize(stream));
 
 
@@ -3799,7 +3896,10 @@ void Testbed::render_nerf_rt(CudaRenderBuffer& render_buffer, const Vector2i& ma
 
 
 				shadow_map<<<blocks, threads, 0, stream>>>(
-					m_simple_rt.shadow_decay, m_simple_rt.array_pos, m_simple_rt.array_shadow, 
+					m_simple_rt.shadow_decay, 
+					m_simple_rt.light_falloff_start_angle, m_simple_rt.light_falloff_end_angle, 
+					m_simple_rt.light_lookat, m_simple_rt.light_albedo, 
+					m_simple_rt.array_pos, m_simple_rt.array_shadow, 
 					m_simple_rt.array_next_end, resolution.x(), resolution.y(), m_simple_rt.d_world, m_simple_rt.d_lightsrc, m_simple_rt.d_shadow, m_simple_rt.d_rand_state);
 
 				CUDA_CHECK_THROW(cudaStreamSynchronize(stream));

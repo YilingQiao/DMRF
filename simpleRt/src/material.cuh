@@ -23,21 +23,33 @@ public:
 	material_type type;
 };
 
-class lightsource : public material {
-public:
-	__host__ __device__ lightsource(const vec3& a);
+// class lightsource : public material {
+// public:
+// 	__host__ __device__ lightsource(const vec3& a);
 
-	__device__ bool scatter(const ray& r_in, const hit_record& rec,
-		vec3& attenuation, ray& scattered, curandState *pixel_random_seed);
+// 	__device__ bool scatter(const ray& r_in, const hit_record& rec,
+// 		vec3& attenuation, ray& scattered, curandState *pixel_random_seed);
 
-	virtual material* copy_to_gpu() const {
-		material *device;
-		checkCudaErrors(cudaMalloc((void**)&device, sizeof(lightsource)));
-		checkCudaErrors(cudaMemcpy(device, this, sizeof(lightsource), cudaMemcpyHostToDevice));
-		return device;
-	}
-	vec3 albedo;
-};
+// 	virtual material* copy_to_gpu() const {
+// 		material *device;
+// 		checkCudaErrors(cudaMalloc((void**)&device, sizeof(lightsource)));
+// 		// printf("sizeof(lightsource) %d \n", sizeof(lightsource));
+// 		checkCudaErrors(cudaMemcpy(device, this, sizeof(lightsource), cudaMemcpyHostToDevice));
+// 		return device;
+// 	}
+
+// 	// __host__ __device__ void set_lookat(const vec3& l);
+
+// 	// __host__ __device__ void set_falloff_start_angle(float angle);
+// 	// __host__ __device__ void set_falloff_end_angle(float angle);
+
+// 	// __device__ vec3 get_lookat();
+
+// 	// float falloff_start_angle;
+// 	// float falloff_end_angle;
+// 	// vec3 lookat;
+// 	vec3 albedo;
+// };
 
 class lambertian : public material {
 public:
@@ -54,6 +66,21 @@ public:
 	}
 	vec3 albedo;
 };
+class lightsource : public material {
+public:
+	__host__ __device__ lightsource(const vec3& a);
+
+	__device__ bool scatter(const ray& r_in, const hit_record& rec,
+		vec3& attenuation, ray& scattered, curandState *pixel_random_seed);
+
+	virtual material* copy_to_gpu() const {
+		material *device;
+		checkCudaErrors(cudaMalloc((void**)&device, sizeof(lightsource)));
+		checkCudaErrors(cudaMemcpy(device, this, sizeof(lightsource), cudaMemcpyHostToDevice));
+		return device;
+	}
+	vec3 albedo;
+};
 
 class metal : public material {
 public:
@@ -65,6 +92,7 @@ public:
 	virtual material* copy_to_gpu() const {
 		material *device;
 		checkCudaErrors(cudaMalloc((void**)&device, sizeof(metal)));
+		// printf("sizeof(metal) %d \n", sizeof(metal));
 		checkCudaErrors(cudaMemcpy(device, this, sizeof(metal), cudaMemcpyHostToDevice));
 		return device;
 	}
