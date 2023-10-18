@@ -161,21 +161,21 @@ void create_with_bvh_geometry_shadow(
   }
 
   // initialize world in cpu - bvh
-  hittable *world_host;
-  world_host = new bvh_node(h_obj, 0, size_obj_from_json, 0, 1, 0);
-  checkCudaErrors(cudaMalloc((void**)&d_world, sizeof(hittable*)));
-  hittable **tmp = new hittable*[1];
-  *tmp = world_host->copy_to_gpu();
-  checkCudaErrors(cudaMemcpy(d_world, tmp, sizeof(hittable*), cudaMemcpyHostToDevice));
+  // hittable *world_host;
+  // world_host = new bvh_node(h_obj, 0, size_obj_from_json, 0, 1, 0);
+  // checkCudaErrors(cudaMalloc((void**)&d_world, sizeof(hittable*)));
+  // hittable **tmp = new hittable*[1];
+  // *tmp = world_host->copy_to_gpu();
+  // checkCudaErrors(cudaMemcpy(d_world, tmp, sizeof(hittable*), cudaMemcpyHostToDevice));
 
 
   // initialize world in cpu - list
-  // checkCudaErrors(cudaMalloc((void**)&d_world, sizeof(hittable*)));
-  // hittable **tmp = new hittable*[1];
-  // hittable *h_obj_list;
-  // h_obj_list  = new hittable_list(h_obj, size_obj_from_json);
-  // *tmp = h_obj_list->copy_to_gpu();
-  // checkCudaErrors(cudaMemcpy(d_world, tmp, sizeof(hittable*), cudaMemcpyHostToDevice));
+  checkCudaErrors(cudaMalloc((void**)&d_world, sizeof(hittable*)));
+  hittable **tmp = new hittable*[1];
+  hittable *h_obj_list;
+  h_obj_list  = new hittable_list(h_obj, size_obj_from_json);
+  *tmp = h_obj_list->copy_to_gpu();
+  checkCudaErrors(cudaMemcpy(d_world, tmp, sizeof(hittable*), cudaMemcpyHostToDevice));
 
 
   // initialize lightsrc in cpu
