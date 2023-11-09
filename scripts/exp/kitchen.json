@@ -1,0 +1,256 @@
+{
+	"nx": 1200,
+	"ny": 800,
+	"ns": 10,
+	"camera": {
+		"lookfrom": [
+			13,
+			2,
+			3
+		],
+		"lookat": [
+			0,
+			0,
+			0
+		],
+		"vup": [
+			0,
+			0,
+			1
+		],
+		"vfov": 55,
+		"aspect": 2,
+		"aperture": 0.1,
+		"focus_dist": 17.3
+	},
+	"objfile": [
+		{
+			"dir": "./data/autolighting/kitchen_hdr/assets/shadow_catcher.obj",
+			"material": 1
+		},
+		{
+			"dir": "./data/autolighting/kitchen_hdr/assets/cat/cat_blackfur/cat_blackfur.obj",
+			"material": 3
+		},
+		{
+			"dir": "./data/autolighting/kitchen_hdr/assets/cat/cat_eyeball/cat_eyeball.obj",
+			"material": 2
+		},
+		{
+			"dir": "./data/autolighting/kitchen_hdr/assets/man/man_hair/man_hair.obj",
+			"material": 4
+		},
+		{
+			"dir": "./data/autolighting/kitchen_hdr/assets/man/man_pants/man_pants.obj",
+			"material": 5
+		},
+		{
+			"dir": "./data/autolighting/kitchen_hdr/assets/man/man_shoes/man_shoes.obj",
+			"material": 6
+		},
+		{
+			"dir": "./data/autolighting/kitchen_hdr/assets/man/man_skin/man_skin.obj",
+			"material": 7
+		},
+		{
+			"dir": "./data/autolighting/kitchen_hdr/assets/man/man_sweater/man_sweater.obj",
+			"material": 8
+		},
+		{
+			"dir": "./data/autolighting/kitchen_hdr/assets/woman/woman_hair/woman_hair.obj",
+			"material": 9
+		},
+		{
+			"dir": "./data/autolighting/kitchen_hdr/assets/woman/woman_pants/woman_pants.obj",
+			"material": 10
+		},
+		{
+			"dir": "./data/autolighting/kitchen_hdr/assets/woman/woman_shirt/woman_shirt.obj",
+			"material": 11
+		},
+		{
+			"dir": "./data/autolighting/kitchen_hdr/assets/woman/woman_shoes/woman_shoes.obj",
+			"material": 12
+		},
+		{
+			"dir": "./data/autolighting/kitchen_hdr/assets/woman/woman_skin/woman_skin.obj",
+			"material": 13
+		},
+		{
+			"dir": "./data/autolighting/kitchen_hdr/assets/roomba/roomba_darkgrayplastic/roomba_darkgrayplastic.obj",
+			"material": 14
+		},
+		{
+			"dir": "./data/autolighting/kitchen_hdr/assets/roomba/roomba_grayplastic/roomba_grayplastic.obj",
+			"material": 15
+		},
+		{
+			"dir": "./data/autolighting/kitchen_hdr/assets/roomba/roomba_metal/roomba_metal.obj",
+			"material": 16
+		}
+	],
+	"materials": [
+		{
+			"id": 0,
+			"type": "shadow",
+			"albedo": [
+				0.0,
+				0.0,
+				0.0
+			]
+		},
+		{
+			"id": 1,
+			"type": "metal",
+			"albedo": [
+				0.05,
+				0.05,
+				0.05
+			],
+			"fuzz": 0.0
+		},
+		{
+			"id": 2,
+			"type": "lamberian",
+			"albedo": [
+				0.05,
+				0.05,
+				0.05
+			]
+		},
+		{
+			"id": 3,
+			"type": "lamberian",
+			"albedo": [
+				0.1,
+				0.1,
+				0.05
+			]
+		},
+		{
+			"id": 4,
+			"type": "lamberian",
+			"albedo": [
+				0.75,
+				0.57,
+				0.39
+			]
+		},
+		{
+			"id": 5,
+			"type": "lamberian",
+			"albedo": [
+				0.17,
+				0.09,
+				0.01
+			]
+		},
+		{
+			"id": 6,
+			"type": "lamberian",
+			"albedo": [
+				0.54,
+				0.39,
+				0.24
+			]
+		},
+		{
+			"id": 7,
+			"type": "lamberian",
+			"albedo": [
+				0.01,
+				0.05,
+				0.27
+			]
+		},
+		{
+			"id": 8,
+			"type": "lamberian",
+			"albedo": [
+				0.1,
+				0.06,
+				0.0
+			]
+		},
+		{
+			"id": 9,
+			"type": "lamberian",
+			"albedo": [
+				0.01,
+				0.05,
+				0.27
+			]
+		},
+		{
+			"id": 10,
+			"type": "lamberian",
+			"albedo": [
+				1.0,
+				1.0,
+				1.0
+			]
+		},
+		{
+			"id": 11,
+			"type": "lamberian",
+			"albedo": [
+				1.0,
+				1.0,
+				1.0
+			]
+		},
+		{
+			"id": 12,
+			"type": "lamberian",
+			"albedo": [
+				0.61,
+				0.44,
+				0.27
+			]
+		},
+		{
+			"id": 13,
+			"type": "lamberian",
+			"albedo": [
+				0.1,
+				0.1,
+				0.1
+			]
+		},
+		{
+			"id": 14,
+			"type": "lamberian",
+			"albedo": [
+				0.25,
+				0.25,
+				0.25
+			]
+		},
+		{
+			"id": 15,
+			"type": "metal",
+			"albedo": [
+				0.9,
+				0.9,
+				0.9
+			],
+			"fuzz": 0.0
+		},
+		{
+            "id": 16,
+            "type": "lightsource",
+            "albedo": [
+                10.0,
+                10.0,
+                10.0
+            ],
+            "lookat": [
+                0.0,
+                -1.0,
+                0.0
+            ],
+            "falloff_start_angle": 0.5,
+            "falloff_end_angle": 0.7
+        }
+	]
+}

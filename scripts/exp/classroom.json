@@ -1,0 +1,91 @@
+{
+    "nx": 1200,
+    "ny": 800,
+    "ns": 10,
+    "camera": {
+        "lookfrom": [
+            13,
+            2,
+            3
+        ],
+        "lookat": [
+            0,
+            0,
+            0
+        ],
+        "vup": [
+            0,
+            0,
+            1
+        ],
+        "vfov": 55,
+        "aspect": 2,
+        "aperture": 0.1,
+        "focus_dist": 17.3
+    },
+    "spheres": [
+        {
+            "center": [0.615, 1.2, 1.0],
+            "radius": 0.0001,
+            "material": 1
+        },
+        {
+            "center": [-0.35, 1.2, 1.02],
+            "radius": 0.0001,
+            "material": 1
+        },
+        {
+            "center": [1.2, 1.2, 0.23],
+            "radius": 0.0001,
+            "material": 1
+        },
+        {
+            "center": [0.0, 1.2, 0.0],
+            "radius": 0.0001,
+            "material": 1
+        }
+    ],
+    "objfile": [
+        {
+            "dir": "./data/autolighting/classroom/assets/shadow_catcher.obj",
+            "material": 2
+        }
+    ],
+    "materials": [
+        {
+            "id": 0,
+            "type": "lightsource",
+            "albedo": [
+                10.0,
+                10.0,
+                10.0
+            ],
+            "lookat": [
+                0.0,
+                -1.0,
+                0.0
+            ],
+            "falloff_start_angle": 0.5,
+            "falloff_end_angle": 0.7
+        },
+		{
+            "id": 1,
+            "type": "shadow",
+            "albedo": [
+                0.1,
+                0.1,
+                0.1
+            ]
+        },
+        {
+            "id": 2,
+            "type": "metal",
+            "albedo": [
+                1.0,
+                1.0,
+                1.0
+            ],
+            "fuzz": 0.0
+        }
+    ]
+}
