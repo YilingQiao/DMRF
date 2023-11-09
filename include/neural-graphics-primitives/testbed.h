@@ -786,11 +786,11 @@ public:
 			NerfCounters counters_rgb;
 
 			bool random_bg_color = true;
-			bool linear_colors = false;
-			ELossType loss_type = ELossType::L2;
+//			bool linear_colors = false;
+//			ELossType loss_type = ELossType::L2;
 
-			// bool linear_colors = true;
-			// ELossType loss_type = ELossType::RelativeL2;
+			 bool linear_colors = true;
+			 ELossType loss_type = ELossType::RelativeL2;
 
 			ELossType depth_loss_type = ELossType::L1;
 			bool snap_to_pixel_centers = true;
