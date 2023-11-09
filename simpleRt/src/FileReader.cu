@@ -42,14 +42,22 @@ void FileReader::read_obj_file(char *dir, vector<hittable*> &vec_obj_list, mater
 		// throw std::runtime_error{fmt::format("Error loading obj: {}", err)};
 	}
 
-	bool is_transformed = false;
+	bool is_transformed = true;
 
 	printf("read_obj_file!!\n");
 
 	// AGAO - Scale and offset mesh in order to match that transform applied to the
 	// raw training data by Instant-NGP.  (Hardcode default values for now)
-	const float scale = 1 / 3.0;
-	const float offset = 0.5;
+	float scale = 1 / 3.0;
+
+	float offset_x = 0.5;
+	float offset_y = 0.5;
+	float offset_z = 0.5;
+
+    // courtyard scene only
+	offset_x = - 4.0;
+	offset_y = 0.0;
+	offset_z = - 4.0;
 
     const float theta_x = -M_PI / 2.0f; // -90 degrees around x-axis
     const float theta_z = -M_PI / 2.0f; // -90 degrees around z-axis
@@ -83,8 +91,8 @@ void FileReader::read_obj_file(char *dir, vector<hittable*> &vec_obj_list, mater
 				const tinyobj::real_t vz = attrib.vertices[3*idx.vertex_index+2];
 
 				if (is_transformed) {
-					const Eigen::Vector3f point(vx * scale + offset, vy * scale + offset, vz * scale + offset);
-					const Eigen::Vector3f rotated_point = rot_mat * point;
+					const Eigen::Vector3f point(vx * scale + offset_x, vy * scale + offset_y, vz * scale + offset_z);
+					const Eigen::Vector3f rotated_point = point; // rot_mat * point;
 
 					points.push_back(vec3(rotated_point[0], rotated_point[1], rotated_point[2]));
 				}
@@ -163,9 +171,9 @@ bool FileReader::readfile_to_render(
 	vector<hittable*>& vec_obj_list,
 	vector<hittable*>& vec_lightsrc_list,
 	vector<hittable*>& vec_geom_list,
-	const char *path,          // 
-	int &nx, int &ny, int &ns, // 
-	camera *&c // 
+	const char *path,          //
+	int &nx, int &ny, int &ns, //
+	camera *&c //
 	)
 {
 	ifstream inputfile(path);
@@ -266,11 +274,11 @@ bool FileReader::readfile_to_render(
 			mat_type[i] = 2;
 		}
 	}
-	int sphere_cnt = json_tree["spheres"].Size(); 
+	int sphere_cnt = json_tree["spheres"].Size();
 	int obj_cnt = json_tree["objfile"].Size();
 	//cout << (o_list_size = sphere_cnt + obj_cnt) << endl;
 	//obj_list = new hittable *[sphere_cnt + obj_cnt];
-	
+
 	for (int i = 0; i < sphere_cnt; i++)
 	{
 		if (mat_type[json_tree["spheres"][i]["material"].GetInt() - 1] == 1) {
