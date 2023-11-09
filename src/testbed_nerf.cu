@@ -2008,14 +2008,14 @@ __global__ void shade_kernel_nerf_rt(
 	vec3& L = array_L[payload.idx];
 
 	Array4f acc_beta_rt = {
-		beta[0], beta[1], beta[2], 
+		beta[0], beta[1], beta[2],
 		1
 	};
 
 	frame_buffer[payload.idx] += tmp * Array4f(beta[0]*array_shadow[payload.idx], beta[1]*array_shadow[payload.idx], beta[2]*array_shadow[payload.idx], 1.0f);
 	// frame_buffer[payload.idx] += tmp * Array4f(beta[0], beta[1], beta[2], 1.0f);
 	// frame_buffer[payload.idx] = tmp + frame_buffer[payload.idx] * (1.0f - tmp.w());
-	
+
 
 	beta = beta * (1.0f - tmp.w());
 	// frame_buffer[payload.idx] += Array4f(L[0], L[1], L[2], 1.) * Array4f(beta[0], beta[1], beta[2], 1.);
@@ -2083,12 +2083,12 @@ __global__ void shade_kernel_nerf_rt(
 
 // 	float acc_B = 1 - std::cbrt(curr_fb[0]*curr_fb[1]*curr_fb[2]) * (1.0f - tmp.w());
 
-	
+
 // 	attenuation = attenuation * (1.f - acc_B) + acc_B * vec3(1.0, 1.0, 1.0);
-// 	curr_fb = curr_fb * attenuation; 
-	
+// 	curr_fb = curr_fb * attenuation;
+
 // 	// if (i == 0)
-// 	// 	printf("%d acc_B %f %f %f| %f %f %f| %f %f %f attenuation fb %f %f %f\n", 
+// 	// 	printf("%d acc_B %f %f %f| %f %f %f| %f %f %f attenuation fb %f %f %f\n",
 // 	// 		n_elements, acc_B, tmp.w(), payload.t,
 // 	// 		tmp[0], tmp[1], tmp[2],
 // 	// 		attenuation[0], attenuation[1], attenuation[2],
@@ -2098,14 +2098,14 @@ __global__ void shade_kernel_nerf_rt(
 // 	// printf("%f %f %f %f attenuation\n", acc_B, attenuation[0], attenuation[1], attenuation[2]);
 
 // 	Array4f acc_fb_rt = {
-// 		curr_fb[0], curr_fb[1], curr_fb[2], 
+// 		curr_fb[0], curr_fb[1], curr_fb[2],
 // 		// std::cbrt(curr_fb[0]*curr_fb[1]*curr_fb[2])
 // 		1
 // 	};
 
 // 	frame_buffer[payload.idx] += tmp * acc_fb_rt;
 // 	// frame_buffer[payload.idx] = tmp + frame_buffer[payload.idx] * (1.0f - tmp.w());
-	
+
 // 	curr_fb = curr_fb * (1.0f - tmp.w());
 
 // 	// if (acc_B > 0.2f) {
@@ -2216,8 +2216,8 @@ __global__ void test_rt(
 
 	NerfPayload& src_payload = src_payloads[i];
 	// float ray_t = rt_rays[src_payload.idx]._time;
-	// printf("(%d,%d,%f)", i, src_payload.idx, ray_t); 
-	printf("(%d,%d)", i, src_payload.idx); 
+	// printf("(%d,%d,%f)", i, src_payload.idx, ray_t);
+	printf("(%d,%d)", i, src_payload.idx);
 
 	// dst_final_rgba[0] = src_rgba[i];
 
@@ -2423,7 +2423,7 @@ __global__ void init_rays_with_payload_kernel_nerf_rt(
 	NerfPayload& payload = payloads[idx];
 	payload.max_weight = 0.0f;
 	payload.idx = idx;
-	
+
 
 	const float *o = rt_rays[idx].origin().e;
 	const float *d = rt_rays[idx].direction().e;
@@ -2431,7 +2431,7 @@ __global__ void init_rays_with_payload_kernel_nerf_rt(
 	if (rt_array_end[idx]) {
 		payload.alive = false;
 		return;
-	} 
+	}
 
 	if (quilting_dims != Vector2i::Ones()) {
 		apply_quilting(&x, &y, resolution, parallax_shift, quilting_dims);
@@ -2812,7 +2812,7 @@ uint32_t Testbed::NerfTracer::trace_rt(
 	while (i < MARCH_ITER) {
 		RaysNerfSoa& rays_current = m_rays[(double_buffer_index + 1) % 2];
 		RaysNerfSoa& rays_tmp = m_rays[double_buffer_index % 2];
-		// printf("double_buffer_index~ %d\n", double_buffer_index % 2); 
+		// printf("double_buffer_index~ %d\n", double_buffer_index % 2);
 		++double_buffer_index;
 
 		// Compact rays that did not diverge yet
@@ -2827,7 +2827,7 @@ uint32_t Testbed::NerfTracer::trace_rt(
 			// 	m_rays_hit.rgba, m_rays_hit.depth, m_rays_hit.payload,
 			// 	m_alive_counter.data(), m_hit_counter.data()
 			// );
-			// CUDA_CHECK_THROW(cudaStreamSynchronize(stream)); 
+			// CUDA_CHECK_THROW(cudaStreamSynchronize(stream));
 
 
 			linear_kernel(compact_kernel_nerf_rt, 0, stream,
@@ -2844,8 +2844,8 @@ uint32_t Testbed::NerfTracer::trace_rt(
 			CUDA_CHECK_THROW(cudaStreamSynchronize(stream));
 		}
 
-		// printf("i MARCH_ITER n_alive %d %d | %d %d\n", 
-		// 	i, MARCH_ITER, 
+		// printf("i MARCH_ITER n_alive %d %d | %d %d\n",
+		// 	i, MARCH_ITER,
 		// 	n_alive, tmp_hit);
 
 		if (n_alive == 0) {
@@ -2911,7 +2911,7 @@ uint32_t Testbed::NerfTracer::trace_rt(
 
 	uint32_t n_hit;
 	CUDA_CHECK_THROW(cudaMemcpyAsync(&n_hit, m_hit_counter.data(), sizeof(uint32_t), cudaMemcpyDeviceToHost, stream));
-	
+
 	// printf("m_hit_counter %d\n", m_hit_counter);
 
 	return n_hit;
@@ -3257,7 +3257,7 @@ void Testbed::resize_rt(
 
 __global__ void reset_arrays_rt(
 	Vector2i resolution,
-	bool *array_next_end, 
+	bool *array_next_end,
 	vec3 *array_attenuation,
 	vec3 *array_beta,
 	vec3 *array_L,
@@ -3498,7 +3498,7 @@ void Testbed::init_bounce_rt(
 	ERenderMode render_mode,
 	cudaStream_t stream
 	) {
-	
+
 	const dim3 threads = { 16, 8, 1 };
 	const dim3 blocks = { div_round_up((uint32_t)resolution.x(), threads.x), div_round_up((uint32_t)resolution.y(), threads.y), 1 };
 	init_ray_rt<<<blocks, threads, 0, stream>>>(
@@ -3529,8 +3529,8 @@ void Testbed::init_bounce_rt(
 	);
 
 	reset_arrays_rt<<<blocks, threads, 0, stream>>>(
-		resolution, 
-		m_simple_rt.array_next_end, 
+		resolution,
+		m_simple_rt.array_next_end,
 		m_simple_rt.array_attenuation,
 		m_simple_rt.array_beta,
 		m_simple_rt.array_L,
@@ -3557,12 +3557,12 @@ void Testbed::init_bounce_rt(
 
 
 __global__ void shadow_map(
-	float shadow_decay, 
-	float light_falloff_start_angle, float light_falloff_end_angle, 
-	vec3 light_lookat, vec3 light_albedo, 
-	vec3 *array_pos, float *array_shadow, bool *array_next_end, 
-	int max_x, int max_y, 
-	hittable **d_world, hittable **d_lightsrc, hittable **d_shadow, 
+	float shadow_decay,
+	float light_falloff_start_angle, float light_falloff_end_angle,
+	vec3 light_lookat, vec3 light_albedo,
+	vec3 *array_pos, float *array_shadow, bool *array_next_end,
+	int max_x, int max_y,
+	hittable **d_world, hittable **d_lightsrc, hittable **d_shadow,
 	curandState *rand_state) {
 	int i = threadIdx.x + blockIdx.x * blockDim.x;
 	int j = threadIdx.y + blockIdx.y * blockDim.y;
@@ -3575,11 +3575,11 @@ __global__ void shadow_map(
 	// }
 
 	curandState& local_rand_state = rand_state[pixel_index];
-	
+
 
     vec3& p = array_pos[pixel_index];
     // a hack for the rays that do not hit the shadow mesh
-    if (p.length() < 0.0001f) // 
+    if (p.length() < 0.0001f) //
     	return;
 
     // vec3 light_src = p + vec3(0., 10., 0.);
@@ -3602,7 +3602,7 @@ __global__ void shadow_map(
     // if (hit | shadow_mesh_hit) {
     if (hit) {
         array_shadow[pixel_index] = shadow_decay;
-    } 
+    }
     else {
     	dir = -dir;
 
@@ -3664,13 +3664,13 @@ __global__ void catch_shadow(
 }
 
 __global__ void ray_trace(
-	vec3 *array_L, bool *array_end, bool *array_next_end, 
-	vec3 *array_attenuation, ray *array_ray, ray *array_next_ray, 
-	int max_x, int max_y, hittable **world, 
+	vec3 *array_L, bool *array_end, bool *array_next_end,
+	vec3 *array_attenuation, ray *array_ray, ray *array_next_ray,
+	int max_x, int max_y, hittable **world,
 
-	hittable **d_lightsrc, 
-	float light_falloff_start_angle, float light_falloff_end_angle, 
-    vec3 light_lookat, vec3 light_albedo, 
+	hittable **d_lightsrc,
+	float light_falloff_start_angle, float light_falloff_end_angle,
+    vec3 light_lookat, vec3 light_albedo,
 
 	curandState *rand_state) {
 	int i = threadIdx.x + blockIdx.x * blockDim.x;
@@ -3692,7 +3692,7 @@ __global__ void ray_trace(
 	curandState local_rand_state = rand_state[pixel_index];
 
 	cur_ray = next_ray;
-	
+
 
 
 	hit_record rec_lightsrc;
@@ -3733,8 +3733,8 @@ __global__ void ray_trace(
 		// printf("!!!! ~ 1\n");
 		ray scattered;
 		vec3 attenuation;
-		cur_ray._time = rec.t; 
-		
+		cur_ray._time = rec.t;
+
 		if(rec.mat_ptr->scatter(
 		    cur_ray, rec, attenuation, scattered, &local_rand_state)) {
 		    cur_attenuation = attenuation;
@@ -3744,8 +3744,8 @@ __global__ void ray_trace(
 			// L = (1.0f-t)*vec3(1.0, 1.0, 1.0) + t*vec3(0.5, 0.7, 1.0);
 			// L = attenuation;
 
-			// printf("%f %f %f --- attenuation %f %f %f\n", 
-			// 	attenuation[0], attenuation[1], attenuation[2], 
+			// printf("%f %f %f --- attenuation %f %f %f\n",
+			// 	attenuation[0], attenuation[1], attenuation[2],
 			// 	cur_attenuation[0], cur_attenuation[1], cur_attenuation[2]);
 		    next_ray = scattered;
 		}
@@ -3772,7 +3772,7 @@ __global__ void ray_trace(
 }
 
 __global__ void normalize_sample_rt(
-  Array4f* __restrict__ rgba, vec3 *agg_fb, int max_x, 
+  Array4f* __restrict__ rgba, vec3 *agg_fb, int max_x,
   int max_y, int ns) {
   int i = threadIdx.x + blockIdx.x * blockDim.x;
   int j = threadIdx.y + blockIdx.y * blockDim.y;
@@ -3789,7 +3789,7 @@ __global__ void normalize_sample_rt(
 
 
 __global__ void add_sample_rt(
-	Array4f* __restrict__ rgba, vec3 *agg_fb, 
+	Array4f* __restrict__ rgba, vec3 *agg_fb,
 	int max_x, int max_y) {
 	int i = threadIdx.x + blockIdx.x * blockDim.x;
 	int j = threadIdx.y + blockIdx.y * blockDim.y;
@@ -3824,6 +3824,8 @@ void Testbed::render_nerf_rt(CudaRenderBuffer& render_buffer, const Vector2i& ma
 
 	Lens lens = render_opencv_lens ? m_nerf.render_lens : Lens{};
 
+	// AGAO TODO: Pipe this through as a parameter so it is not hardcoded like this.
+	lens.mode = ELensMode::Equirectangular;
 
 	const Vector2i& resolution = render_buffer.in_resolution();
 	const dim3 threads = { 16, 8, 1 };
@@ -3875,13 +3877,13 @@ void Testbed::render_nerf_rt(CudaRenderBuffer& render_buffer, const Vector2i& ma
 
 			ray_trace<<<blocks, threads, 0, stream>>>(
 				m_simple_rt.array_L, m_simple_rt.array_end, m_simple_rt.array_next_end,
-				m_simple_rt.array_attenuation, 
+				m_simple_rt.array_attenuation,
 				m_simple_rt.array_ray, m_simple_rt.array_next_ray,
-				resolution.x(), resolution.y(), m_simple_rt.d_world, 
+				resolution.x(), resolution.y(), m_simple_rt.d_world,
 
 				m_simple_rt.d_lightsrc,
-				m_simple_rt.light_falloff_start_angle, m_simple_rt.light_falloff_end_angle, 
-				m_simple_rt.light_lookat, m_simple_rt.light_albedo, 
+				m_simple_rt.light_falloff_start_angle, m_simple_rt.light_falloff_end_angle,
+				m_simple_rt.light_lookat, m_simple_rt.light_albedo,
 
 				m_simple_rt.d_rand_state);
 			CUDA_CHECK_THROW(cudaStreamSynchronize(stream));
@@ -3896,10 +3898,10 @@ void Testbed::render_nerf_rt(CudaRenderBuffer& render_buffer, const Vector2i& ma
 
 
 				shadow_map<<<blocks, threads, 0, stream>>>(
-					m_simple_rt.shadow_decay, 
-					m_simple_rt.light_falloff_start_angle, m_simple_rt.light_falloff_end_angle, 
-					m_simple_rt.light_lookat, m_simple_rt.light_albedo, 
-					m_simple_rt.array_pos, m_simple_rt.array_shadow, 
+					m_simple_rt.shadow_decay,
+					m_simple_rt.light_falloff_start_angle, m_simple_rt.light_falloff_end_angle,
+					m_simple_rt.light_lookat, m_simple_rt.light_albedo,
+					m_simple_rt.array_pos, m_simple_rt.array_shadow,
 					m_simple_rt.array_next_end, resolution.x(), resolution.y(), m_simple_rt.d_world, m_simple_rt.d_lightsrc, m_simple_rt.d_shadow, m_simple_rt.d_rand_state);
 
 				CUDA_CHECK_THROW(cudaStreamSynchronize(stream));
@@ -3998,9 +4000,9 @@ void Testbed::render_nerf_rt(CudaRenderBuffer& render_buffer, const Vector2i& ma
 
 			int _size = render_buffer.frame_buffer()->size();
 			// printf("size %d\n", _size);
-			// printf("resolution %d x %d = %d\n", 
-			// 	resolution.x(), 
-			// 	resolution.y(), 
+			// printf("resolution %d x %d = %d\n",
+			// 	resolution.x(),
+			// 	resolution.y(),
 			// 	resolution.x() * resolution.y());
 
 			// add_background_rt<<<blocks, threads, 0, stream>>>(
@@ -4036,6 +4038,8 @@ void Testbed::render_nerf(CudaRenderBuffer& render_buffer, const Vector2i& max_r
 
 	Lens lens = render_opencv_lens ? m_nerf.render_lens : Lens{};
 
+	// AGAO TODO: Pipe this through as a parameter so it is not hardcoded like this.
+	lens.mode = ELensMode::Equirectangular;
 
 	m_nerf.tracer.init_rays_from_camera(
 		render_buffer.spp(),

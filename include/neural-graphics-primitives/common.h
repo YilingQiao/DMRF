@@ -178,6 +178,7 @@ enum class ELensMode : int {
 	OpenCV,
 	FTheta,
 	LatLong,
+	Equirectangular,
 };
 
 struct Lens {

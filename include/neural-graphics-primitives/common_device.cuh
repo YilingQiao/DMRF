@@ -257,6 +257,15 @@ inline NGP_HOST_DEVICE Eigen::Vector3f latlong_to_dir(const Eigen::Vector2f& uv)
 	return {sp * ct, st, cp * ct};
 }
 
+inline NGP_HOST_DEVICE Eigen::Vector3f equirectangular_to_dir(const Eigen::Vector2f& uv) {
+	float ct = (uv.y() - 0.5f) * 2.0f;
+	float st = sqrt(max(1.0f - ct * ct, 0.0f));
+	float phi = (uv.x() - 0.5f) * PI() * 2.0f;
+	float sp, cp;
+	sincosf(phi, &sp, &cp);
+	return {sp * st, ct, cp * st};
+}
+
 inline NGP_HOST_DEVICE Ray pixel_to_ray(
 	uint32_t spp,
 	const Eigen::Vector2i& pixel,
@@ -284,6 +293,8 @@ inline NGP_HOST_DEVICE Ray pixel_to_ray(
 		}
 	} else if (lens.mode == ELensMode::LatLong) {
 		dir = latlong_to_dir(uv);
+	} else if (lens.mode == ELensMode::Equirectangular) {
+		dir = equirectangular_to_dir(uv);
 	} else {
 		dir = {
 			(uv.x() - screen_center.x()) * (float)resolution.x() / focal_length.x(),
@@ -303,14 +314,14 @@ inline NGP_HOST_DEVICE Ray pixel_to_ray(
 	dir = camera_matrix.block<3, 3>(0, 0) * dir;
 
 	Eigen::Vector3f origin = camera_matrix.block<3, 3>(0, 0) * head_pos + camera_matrix.col(3);
-	
+
 	if (aperture_size > 0.0f) {
 		Eigen::Vector3f lookat = origin + dir * focus_z;
 		Eigen::Vector2f blur = aperture_size * square2disk_shirley(ld_random_val_2d(spp, (uint32_t)pixel.x() * 19349663 + (uint32_t)pixel.y() * 96925573) * 2.0f - Eigen::Vector2f::Ones());
 		origin += camera_matrix.block<3, 2>(0, 0) * blur;
 		dir = (lookat - origin) / focus_z;
 	}
-	
+
 	origin += dir * near_distance;
 
 	return {origin, dir};

@@ -187,7 +187,7 @@ py::array_t<float> Testbed::render_to_cpu(int width, int height, int spp, bool l
 py::array_t<float> Testbed::render_to_cpu_withspp(int width, int height, int special_spp, bool linear, float start_time, float end_time, float fps, float shutter_fraction) {
 	m_windowless_render_surface.resize({width, height});
 	m_windowless_render_surface.reset_accumulation();
-	
+
 	int spp = 1;
 	m_windowless_render_surface.set_spp(special_spp);
 
@@ -373,6 +373,7 @@ PYBIND11_MODULE(pyngp, m) {
 		.value("OpenCV", ELensMode::OpenCV)
 		.value("FTheta", ELensMode::FTheta)
 		.value("LatLong", ELensMode::LatLong)
+		.value("Equirectangular", ELensMode::Equirectangular)
 		.export_values();
 
 	py::class_<BoundingBox>(m, "BoundingBox")
