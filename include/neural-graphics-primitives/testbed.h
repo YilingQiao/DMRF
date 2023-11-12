@@ -481,6 +481,8 @@ public:
 		bool *array_end;
 		bool *array_next_end;
 
+		bool is_Equirectangular = false;
+
 
 		hittable **d_world;
 		hittable **d_lightsrc;
@@ -522,6 +524,8 @@ public:
 	void rt_set_lightsrc_center(int idx, Eigen::Vector3f c);
 	void rt_set_lightsrc_radius(int idx, Eigen::Vector3f c);
 	void rt_set_shadow_decay(float c);
+
+	void rt_set_Equirectangular(bool is_Equirectangular);
 
 
 	void rt_set_light_falloff_start_angle(float v);

@@ -24,7 +24,7 @@
         "focus_dist": 17.3
     },
     "spheres": [
-        {"center": [0.5, 4.5, 0.5], "radius": 0.2, "material": 1},
+        {"center": [0.5, 4.5, 0.5], "radius": 0.001, "material": 1},
         {"center": [0.5, 0.8, 0.5], "radius": 0.25, "material": 2}
     ],
     "objfile": [
@@ -33,11 +33,11 @@
             "material": 5
         },
         {
-            "dir": "/media/yiling/ljb_backup/yiling/22hybrid_extra/instant-ngp/data/23event_garden/table_top.obj",
+            "dir": "./extra_data/garden_ball/table_top.obj",
             "material": 5
         },
         {
-            "dir": "/media/yiling/ljb_backup/yiling/22hybrid_extra/instant-ngp/data/23event_garden/garden_288_simplified_crop.obj",
+            "dir": "./extra_data/garden_ball/garden_288_simplified_crop.obj",
             "material": 5
         }
     ],

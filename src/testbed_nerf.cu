@@ -3337,6 +3337,12 @@ __global__ void rt_device_set_hittable_radius(hittable_list **root, int idx, vec
 	((sphere*) list[idx])->radius = (*obj_device).x();
 }
 
+
+
+void Testbed::rt_set_Equirectangular(bool is_Equirectangular) {
+	m_simple_rt.is_Equirectangular = is_Equirectangular;
+}
+
 void Testbed::rt_set_hittable_center(int idx, Eigen::Vector3f c) {
 	vec3 *obj_device;
 	vec3 *obj_host = new vec3(c[0], c[1], c[2]);
@@ -3825,7 +3831,8 @@ void Testbed::render_nerf_rt(CudaRenderBuffer& render_buffer, const Vector2i& ma
 	Lens lens = render_opencv_lens ? m_nerf.render_lens : Lens{};
 
 	// AGAO TODO: Pipe this through as a parameter so it is not hardcoded like this.
-	lens.mode = ELensMode::Equirectangular;
+	if (m_simple_rt.is_Equirectangular)
+		lens.mode = ELensMode::Equirectangular;
 
 	const Vector2i& resolution = render_buffer.in_resolution();
 	const dim3 threads = { 16, 8, 1 };
@@ -4039,7 +4046,8 @@ void Testbed::render_nerf(CudaRenderBuffer& render_buffer, const Vector2i& max_r
 	Lens lens = render_opencv_lens ? m_nerf.render_lens : Lens{};
 
 	// AGAO TODO: Pipe this through as a parameter so it is not hardcoded like this.
-	lens.mode = ELensMode::Equirectangular;
+	if (m_simple_rt.is_Equirectangular)
+		lens.mode = ELensMode::Equirectangular;
 
 	m_nerf.tracer.init_rays_from_camera(
 		render_buffer.spp(),

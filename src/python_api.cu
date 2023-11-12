@@ -431,6 +431,9 @@ PYBIND11_MODULE(pyngp, m) {
 			py::arg("idx"),
 			py::arg("c")
 		)
+		.def("rt_set_Equirectangular", &Testbed::rt_set_Equirectangular, "set rt_set_Equirectangular",
+			py::arg("is_Equirectangular")
+		)
 		.def("rt_set_lightsrc_center", &Testbed::rt_set_lightsrc_center, "set center of an lightsrc",
 			py::arg("idx"),
 			py::arg("c")

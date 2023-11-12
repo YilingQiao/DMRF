@@ -42,7 +42,8 @@ void FileReader::read_obj_file(char *dir, vector<hittable*> &vec_obj_list, mater
 		// throw std::runtime_error{fmt::format("Error loading obj: {}", err)};
 	}
 
-	bool is_transformed = true;
+	// bool is_transformed = true;
+	bool is_transformed = false;
 
 	printf("read_obj_file!!\n");
 
@@ -55,9 +56,9 @@ void FileReader::read_obj_file(char *dir, vector<hittable*> &vec_obj_list, mater
 	float offset_z = 0.5;
 
     // courtyard scene only
-	offset_x = - 4.0;
-	offset_y = 0.0;
-	offset_z = - 4.0;
+	// offset_x = - 4.0;
+	// offset_y = 0.0;
+	// offset_z = - 4.0;
 
     const float theta_x = -M_PI / 2.0f; // -90 degrees around x-axis
     const float theta_z = -M_PI / 2.0f; // -90 degrees around z-axis

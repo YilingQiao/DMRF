@@ -303,7 +303,7 @@ set_target_properties(ngp PROPERTIES CUDA_RESOLVE_DEVICE_SYMBOLS ON CUDA_SEPARAB
 target_compile_definitions(ngp PUBLIC ${NGP_DEFINITIONS})
 target_compile_options(ngp PUBLIC $<$<COMPILE_LANGUAGE:CUDA>:${CUDA_NVCC_FLAGS}>)
 target_include_directories(ngp PUBLIC ${NGP_INCLUDE_DIRECTORIES})
-target_link_directories(ngp PUBLIC ${NGP_LINK_DIRECTORIES})
+target_link_directories(ngp PUBLIC ${NGP_LINK_DIRECTORIES} cudart)
 target_link_libraries(ngp PUBLIC ${NGP_LIBRARIES} tiny-cuda-nn)
 
 message(STATUS "print NGP_INCLUDE_DIRECTORIES: ${NGP_INCLUDE_DIRECTORIES}")
