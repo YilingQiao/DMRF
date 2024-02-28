@@ -60,7 +60,7 @@
 		},
 		{
 			"id": 2,
-			"type": "lamberian",
+			"type": "lambertian",
 			"albedo": [
 				0.8,
 				0.8,

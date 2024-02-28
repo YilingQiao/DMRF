@@ -1,5 +1,6 @@
 
 
+
 # Dynamic Mesh-Aware Radiance Fields
 
 [Yi-Ling Qiao*](https://ylqiao.net/), [Alexander Gao*](https://gaoalexander.github.io/), [Yiran Xu](https://twizwei.github.io/), [Yue Feng](https://yuefeng21.github.io/), [Jia-Bin Huang](https://jbhuang0604.github.io/), [Ming C. Lin](https://www.cs.umd.edu/~lin/)
@@ -100,7 +101,17 @@ python ./scripts/exp_game.py --mode nerf --load_snapshot ./extra_data/nerf360/ki
 You can refer to this [tutorial](preprocess/README.md) for preprocessing your own data.
 
 ### Config file
-TODO. An explanation of the config file system. 
+Scene configuration files are stored in `scripts/exp/*.json`.
+
+Geometries in the scene can be provided to the scene by setting `spheres` and `objfile`. You can set the sphere's `center` and `radius`.
+
+Rendering materials of the geometries can be set using `materials` entries. Available types include `dielectric`, `lambertian`, `metal`, `shadow`, `lightsource`. Note that the last two are used for cast shadows and not actually visible in the scene.
+
+The `yiling/231018_lightsrc` branch has more experimental features for controlling the light source, and it can render faster for lambertian materials.
+
+Note that the material `id` in `geometries` and `materials` are different by 1, which might be a little confusing. (i.e. material id in geometries =  `id` in `mateirals` + 1)
+
+
 
 ## BibTex
 ```

@@ -204,7 +204,7 @@ bool FileReader::readfile_to_render(
 	for (int i = 0; i < m_list_size; i++)
 	{
 		mat_type[i] = 0;
-		if (strcmp(json_tree["materials"][i]["type"].GetString(), "lamberian") == 0)
+		if (strcmp(json_tree["materials"][i]["type"].GetString(), "lambertian") == 0)
 		{
 			mat_list[i] = new lambertian(
 				vec3(

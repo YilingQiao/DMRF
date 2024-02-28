@@ -38,7 +38,7 @@
     "materials": [
         {
             "id": 0,
-            "type": "lamberian",
+            "type": "lambertian",
             "albedo": [
                 0.5,
                 0.5,
